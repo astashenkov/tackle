@@ -111,7 +111,7 @@ src/           Preact client
 tests/         unit/, api/, e2e/
 ```
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the reasoning behind the architecture and the products that inspired it.
+See [docs/DESIGN.md](docs/DESIGN.md) for the reasoning behind the architecture and the products that inspired it, and [docs/PLAN.md](docs/PLAN.md) for the implementation plan and roadmap.
 
 ## License
 
