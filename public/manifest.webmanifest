@@ -1,0 +1,10 @@
+{
+  "name": "Tackle",
+  "short_name": "Tackle",
+  "description": "A fast, lightweight task tracker for small teams.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#5e5ce6",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -1,0 +1,32 @@
+# systemd unit for Tackle. Install:
+#   sudo useradd --system --home /var/lib/tackle --shell /usr/sbin/nologin tackle
+#   sudo cp deploy/tackle.service /etc/systemd/system/ && sudo systemctl enable --now tackle
+[Unit]
+Description=Tackle task tracker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tackle
+Group=tackle
+WorkingDirectory=/opt/tackle
+# Creates /var/lib/tackle owned by the tackle user; the database lives there.
+StateDirectory=tackle
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=DATA_DIR=/var/lib/tackle
+# Uncomment when a reverse proxy (Caddy, nginx, Cloudflare Tunnel) sits in front of Tackle:
+#Environment=TRUST_PROXY=true
+ExecStart=/usr/bin/env node /opt/tackle/dist/server.mjs
+Restart=on-failure
+RestartSec=3
+
+# Hardening: read-only system, writable state directory only.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
