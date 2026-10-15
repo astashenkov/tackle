@@ -1,0 +1,14 @@
+services:
+  tackle:
+    build: .
+    image: tackle
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - tackle-data:/data
+    # Behind an HTTPS reverse proxy cookies are marked Secure automatically
+    # (X-Forwarded-Proto). Force it with SECURE_COOKIES=true if needed.
+
+volumes:
+  tackle-data:
