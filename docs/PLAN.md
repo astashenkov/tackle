@@ -151,6 +151,21 @@ A tracker that a team of 2–15 people can start using within minutes and that n
 - [x] Multi-stage `Dockerfile` with only Node and the bundle at runtime, `docker-compose.yml`, health check.
 - [x] README covering quick start, demo, configuration, backups and shortcuts; design notes; screenshots.
 
+## Phase 7: Self-hosting on small hardware ✅
+
+Goal: a Raspberry Pi serving a team of at least three people.
+
+- [x] Load test: 2,000 tasks, 15 live tabs, 3 users × 10 edits/s, with zero errors.
+  - Server cost: 2.8 ms of CPU per edit, about 100 MB of memory.
+  - Full results are in [DEPLOY.md](DEPLOY.md#will-it-be-fast-enough).
+- [x] Gzip compression for JSON responses: the initial load of 2,000 tasks drops from 1 MB to 80 KB. The event stream is left uncompressed.
+- [x] The CSRF check uses `Sec-Fetch-Site`, so it keeps working behind reverse proxies that rewrite the `Host` header (nginx defaults).
+- [x] Sign-in rate limiting uses the socket address. `X-Forwarded-For` is trusted only with `TRUST_PROXY=true`, so the header can't be spoofed to bypass the limit.
+- [x] `node dist/server.mjs backup` writes a consistent `VACUUM INTO` snapshot while the server runs.
+- [x] [DEPLOY.md](DEPLOY.md): hardware notes (ARM64/ARMv7), Node install, systemd unit (`deploy/tackle.service`), Tailscale / Caddy / Cloudflare Tunnel / nginx, backups, troubleshooting.
+
+**Exit check:** 38 unit/API tests and 5 e2e tests pass. The bundle runs from a directory without `node_modules`.
+
 ---
 
 ## Next: v0.2 🔜
@@ -176,6 +191,7 @@ Ordered by value to a small team.
 
 ## Known limitations and tech debt
 
+- **Per-browser connection limit on plain HTTP.** Every open tab keeps one live connection, and browsers allow about six per site over HTTP/1.1. Serve over HTTPS (HTTP/2) or share one connection between tabs via a leader tab.
 - **Single process.** The SSE hub and the rate limiter live in memory, so Tackle scales vertically, not horizontally. That is fine for the target team size.
 - **Reconnects reload everything.** After a reconnect the client reloads the full snapshot. Incremental sync becomes worth it for workspaces of more than a few thousand tasks.
 - **No list virtualization.** Lists render every row; consider virtualization above about 2,000 visible tasks.

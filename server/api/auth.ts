@@ -1,6 +1,8 @@
 import type { Context, Hono } from 'hono';
+import { getConnInfo } from '@hono/node-server/conninfo';
 import { localizedDefaults, PALETTE, PROJECT_KEY_RE } from '../../shared/constants';
 import { endSession, hashPassword, RateLimiter, sessionUser, startSession, verifyPassword } from '../auth';
+import { config } from '../config';
 import { toUser } from '../db';
 import type { Ctx } from '../notify';
 import { handleBase, nextUserColor, uniqueHandle } from '../users';
@@ -9,8 +11,17 @@ import { workspaceInfo } from './workspace';
 
 const loginLimiter = new RateLimiter(10, 15 * 60_000);
 
+/** The caller's IP. Forwarded headers are only trusted behind a proxy, otherwise anyone could spoof them. */
 function clientIp(c: Context): string {
-  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip') ?? 'local';
+  if (config.trustProxy) {
+    const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip');
+    if (forwarded) return forwarded;
+  }
+  try {
+    return getConnInfo(c).remote.address ?? 'unknown';
+  } catch {
+    return 'local'; // in-process requests (tests) have no socket
+  }
 }
 
 export function seedWorkspaceDefaults(ctx: Ctx, locale = 'en') {

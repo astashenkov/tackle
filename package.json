@@ -12,6 +12,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "vite build && node scripts/build-server.mjs",
     "start": "node dist/server.mjs",
+    "backup": "node dist/server.mjs backup",
     "seed": "tsx server/seed.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test --test-reporter=spec \"tests/unit/*.test.ts\" \"tests/api/*.test.ts\"",

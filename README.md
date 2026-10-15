@@ -48,6 +48,8 @@ Want to look around first? Load the demo workspace (sign in as `alex@tackle.dev`
 npm run seed         # add -- --force to replace an existing database
 ```
 
+Hosting on a Raspberry Pi or another small server? See **[docs/DEPLOY.md](docs/DEPLOY.md)**: measured resource usage, systemd service, HTTPS options and backups.
+
 ### Docker
 
 ```bash
@@ -66,12 +68,13 @@ The database lives in the `tackle-data` volume (`/data/tackle.db` inside the con
 | `DATABASE_PATH` | `$DATA_DIR/tackle.db` | Full path to the SQLite file |
 | `SECURE_COOKIES` | `auto` | `auto` marks the session cookie `Secure` when the request came over HTTPS (or `X-Forwarded-Proto: https`); `true`/`false` to force |
 | `SESSION_DAYS` | `30` | Session lifetime |
+| `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for the client IP (sign-in rate limiting). Enable only behind a reverse proxy |
 
 Put Tackle behind any reverse proxy (Caddy, nginx, Traefik) for HTTPS. Server-Sent Events need response buffering disabled for `/api/events` — Tackle sends `X-Accel-Buffering: no`, which nginx honours.
 
 ### Backups
 
-All data is in one SQLite file. Copy it (with `sqlite3 tackle.db ".backup backup.db"` for a consistent snapshot while running) or download a JSON export from *Settings → Data*.
+All data is in one SQLite file. `npm run backup` (or `node dist/server.mjs backup [file]`) writes a consistent copy to `data/backups/` even while the server is running. A JSON export is available in *Settings → Data*.
 
 ## Keyboard shortcuts
 

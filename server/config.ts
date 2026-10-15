@@ -16,4 +16,9 @@ export const config = {
    */
   secureCookies: (env.SECURE_COOKIES ?? 'auto') as 'auto' | 'true' | 'false',
   sessionDays: Number(env.SESSION_DAYS ?? 30),
+  /**
+   * Trust X-Forwarded-For for the client IP (used by sign-in rate limiting).
+   * Enable only when Tackle sits behind a reverse proxy that sets the header.
+   */
+  trustProxy: env.TRUST_PROXY === 'true' || env.TRUST_PROXY === '1',
 };

@@ -31,7 +31,7 @@ Public breakdowns of Linear's architecture consistently point at the same things
 - **Notification hygiene**: you are never notified about your own actions; repeated unread status changes on one task collapse into one inbox item; mentioned people get a *mention* instead of a duplicate *comment* notification.
 - **Recently completed**: closed tasks older than 14 days are hidden from boards and lists by default ("Completed: Recent" in Display), so the Done column doesn't grow forever.
 - **Sprint completion** freezes the sprint's stats and moves unfinished work in one transaction.
-- **Security**: scrypt password hashes, only token hashes stored for sessions, `HttpOnly` + `SameSite=Lax` cookies, an Origin check on writes, a strict CSP, rate-limited sign-in, and a Markdown renderer that escapes everything and emits a fixed set of tags.
+- **Security**: scrypt password hashes, only token hashes stored for sessions, `HttpOnly` + `SameSite=Lax` cookies, a `Sec-Fetch-Site`/Origin check on writes that survives reverse proxies, a strict CSP, rate-limited sign-in, and a Markdown renderer that escapes everything and emits a fixed set of tags.
 - **Accessibility & theming**: system/light/dark themes from one set of CSS tokens, focus trapping in dialogs, reduced-motion support, a screen-reader table behind the burndown chart. Chart colors were checked with a palette validator for contrast and color-vision deficiency separation.
 
 ## Data model

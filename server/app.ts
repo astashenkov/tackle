@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
+import { compress } from 'hono/compress';
 import { streamSSE } from 'hono/streaming';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { requireUser, type AppEnv } from './auth';
@@ -50,15 +51,24 @@ export function createApp({ db, publicDir }: AppOptions) {
   });
 
   // Defense in depth against CSRF on top of SameSite=Lax cookies: reject cross-origin writes.
+  // Browsers report the request's origin relationship in Sec-Fetch-Site, which keeps working behind
+  // reverse proxies that rewrite the Host header; Origin vs Host is the fallback for older browsers.
   app.use('/api/*', async (c, next) => {
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-      const origin = c.req.header('origin');
-      const host = c.req.header('x-forwarded-host') ?? c.req.header('host');
-      if (origin && host && new URL(origin).host !== host) throw new HttpError(403, 'bad_origin', 'Cross-origin request blocked');
+      const site = c.req.header('sec-fetch-site');
+      if (site) {
+        if (site !== 'same-origin' && site !== 'none') throw new HttpError(403, 'bad_origin', 'Cross-origin request blocked');
+      } else {
+        const origin = c.req.header('origin');
+        const host = c.req.header('x-forwarded-host') ?? c.req.header('host');
+        if (origin && host && new URL(origin).host !== host) throw new HttpError(403, 'bad_origin', 'Cross-origin request blocked');
+      }
     }
     c.header('Cache-Control', 'no-store');
     await next();
   });
+  // JSON only: the event stream (text/event-stream) must never be buffered by a compressor.
+  app.use('/api/*', compress({ contentTypeFilter: /^application\/json/ }));
 
   app.get('/api/health', (c) => c.json({ ok: true }));
   authRoutes(app, ctx);

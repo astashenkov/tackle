@@ -2,6 +2,10 @@ import { beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Activity, Notification, Snapshot, Sprint, Task } from '../../shared/types';
 import { createApp } from '../../server/app';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { backupDatabase } from '../../server/backup';
 import { DB } from '../../server/db';
 
 type App = ReturnType<typeof createApp>['app'];
@@ -94,6 +98,27 @@ describe('auth', () => {
   test('blocks cross-origin writes', async () => {
     const res = await admin.req('POST', '/tasks', { projectId: snap.projects[0].id, title: 'x' }, { origin: 'https://evil.example', host: 'tackle.local' });
     assert.equal(res.status, 403);
+  });
+
+  test('uses Sec-Fetch-Site so reverse proxies that rewrite Host keep working', async () => {
+    const p = snap.projects[0].id;
+    const proxied = await admin.req('POST', '/tasks', { projectId: p, title: 'via nginx' }, {
+      origin: 'https://tackle.example.com',
+      host: '127.0.0.1:3000',
+      'sec-fetch-site': 'same-origin',
+    });
+    assert.equal(proxied.status, 201);
+    const forged = await admin.req('POST', '/tasks', { projectId: p, title: 'csrf' }, { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' });
+    assert.equal(forged.status, 403);
+  });
+
+  test('a spoofed X-Forwarded-For does not bypass sign-in rate limiting', async () => {
+    const anon = new Client(app);
+    let last = 0;
+    for (let i = 0; i < 11; i++) {
+      last = (await anon.req('POST', '/login', { email: 'brute@example.com', password: 'wrong-password' }, { 'x-forwarded-for': `10.0.0.${i}` })).status;
+    }
+    assert.equal(last, 429);
   });
 
   test('invites are single-use and members cannot do admin things', async () => {
@@ -196,6 +221,26 @@ describe('tasks', () => {
     const sprint = (await admin.post<Sprint>('/sprints', { projectId: other.id, startDate: '2026-01-01', endDate: '2026-01-14' })).data;
     const t = (await admin.post<Task>('/tasks', { projectId: snap.projects[0].id, title: 'X' })).data;
     assert.equal((await admin.patch(`/tasks/${t.id}`, { sprintId: sprint.id })).status, 400);
+  });
+});
+
+describe('operations', () => {
+  test('compresses JSON responses', async () => {
+    const res = await app.request('/api/sync', { headers: { cookie: admin.cookie, 'accept-encoding': 'gzip' } });
+    assert.equal(res.headers.get('content-encoding'), 'gzip');
+  });
+
+  test('backs up a live database to a single file', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tackle-backup-'));
+    const live = new DB(path.join(dir, 'live.db'));
+    live.run("INSERT INTO meta (key, value) VALUES ('workspace_name', 'Backed up')");
+    const file = backupDatabase(live, path.join(dir, 'nested', 'copy.db'));
+    assert.throws(() => backupDatabase(live, file), /already exists/);
+    const copy = new DB(file);
+    assert.equal(copy.getMeta('workspace_name'), 'Backed up');
+    copy.close();
+    live.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 
