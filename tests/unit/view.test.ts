@@ -41,6 +41,7 @@ function task(p: Partial<Task>): Task {
     statusId: 'todo',
     priority: 0,
     assigneeId: null,
+    reviewerId: null,
     creatorId: null,
     sprintId: null,
     estimate: null,
@@ -56,7 +57,7 @@ function task(p: Partial<Task>): Task {
 }
 
 const a = task({ title: 'Fix login', priority: 2, assigneeId: 'u1', sprintId: 's2', labelIds: ['bug'] });
-const b = task({ title: 'Write docs', priority: 4, statusId: 'doing' });
+const b = task({ title: 'Write docs', priority: 4, statusId: 'doing', reviewerId: 'u1' });
 const c = task({ title: 'Old done', statusId: 'done', completedAt: NOW - 30 * 86_400_000, sprintId: 's1' });
 const d = task({ title: 'New done', statusId: 'done', completedAt: NOW - 86_400_000, priority: 1 });
 const all = [a, b, c, d];
@@ -68,9 +69,11 @@ test('hides old completed tasks in "recent" mode', () => {
   assert.equal(filterTasks(all, emptyFilters(), { completed: 'none' }, ctx).length, 2);
 });
 
-test('filters by assignee, label, sprint and text', () => {
+test('filters by assignee, reviewer, label, sprint and text', () => {
   const f = emptyFilters();
   assert.deepEqual(filterTasks(all, { ...f, assignees: ['none'] }, { completed: 'all' }, ctx).map((t) => t.id), [b.id, c.id, d.id]);
+  assert.deepEqual(filterTasks(all, { ...f, reviewers: ['u1'] }, { completed: 'all' }, ctx).map((t) => t.id), [b.id]);
+  assert.deepEqual(filterTasks(all, { ...f, reviewers: ['none'] }, { completed: 'all' }, ctx).map((t) => t.id), [a.id, c.id, d.id]);
   assert.deepEqual(filterTasks(all, { ...f, labels: ['bug'] }, { completed: 'all' }, ctx).map((t) => t.id), [a.id]);
   assert.deepEqual(filterTasks(all, { ...f, sprints: ['active'] }, { completed: 'all' }, ctx).map((t) => t.id), [a.id]);
   assert.deepEqual(filterTasks(all, { ...f, sprints: ['none'] }, { completed: 'all' }, ctx).map((t) => t.id), [b.id, d.id]);

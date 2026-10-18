@@ -10,6 +10,7 @@ import {
   Hash,
   Link2,
   MoreHorizontal,
+  Paperclip,
   Pencil,
   Plus,
   Trash2,
@@ -20,17 +21,19 @@ import type { Activity, Comment, ID, Task } from '../../shared/types';
 import { api, newId } from '../lib/api';
 import { dueLabel, dueState, formatDate, formatDateTime, relativeTime } from '../lib/date';
 import { t, tx, priorityName } from '../lib/i18n';
-import { useHotkeys } from '../lib/hotkeys';
+import { pastedFiles } from '../lib/files';
+import { hasLayer, useHotkeys } from '../lib/hotkeys';
 import { setQuery } from '../lib/router';
 import { isClosed, labels, me, projects, ready, sprints, statuses, taskRef, tasks, timelineVersion, users } from '../store/data';
-import { deleteTasks, reportError, updateTask } from '../store/actions';
+import { deleteTasks, reportError, updateTask, uploadFiles } from '../store/actions';
 import { openTask, openTaskRef, visibleIds } from '../store/ui';
+import { attachAndLink, attachFiles, Attachments } from './Attachments';
 import { Avatar } from './Avatar';
 import { PriorityIcon, StatusIcon } from './Icons';
 import { Markdown } from './Markdown';
 import { MentionTextarea } from './MentionTextarea';
 import { openPicker } from './Picker';
-import { pickAssignee, pickDueDate, pickEstimate, pickLabels, pickPriority, pickSprint, pickStatus } from './pickers';
+import { pickAssignee, pickDueDate, pickEstimate, pickLabels, pickPriority, pickReviewer, pickSprint, pickStatus } from './pickers';
 import { statusProgress } from './TaskBits';
 import { toast } from './Toasts';
 import { confirm } from './Modal';
@@ -127,6 +130,7 @@ function DescriptionEditor({ task }: { task: Task }) {
           minRows={6}
           autoFocus
           placeholder={t('task.descriptionPlaceholder')}
+          onFiles={(files) => attachAndLink(task.id, files)}
           onBlur={save}
           onKeyDown={(e) => {
             if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
@@ -171,6 +175,7 @@ function Prop({ label, children }: { label: string; children: ComponentChildren 
 function Properties({ task }: { task: Task }) {
   const status = statuses.value[task.statusId];
   const assignee = task.assigneeId ? users.value[task.assigneeId] : null;
+  const reviewer = task.reviewerId ? users.value[task.reviewerId] : null;
   const sprint = task.sprintId ? sprints.value[task.sprintId] : null;
   const taskLabels = task.labelIds.map((l) => labels.value[l]).filter(Boolean);
   const ids = [task.id];
@@ -192,6 +197,12 @@ function Properties({ task }: { task: Task }) {
         <button class={`prop-pill${assignee ? '' : ' muted'}`} data-prop="assignee" onClick={(e) => pickAssignee(e.currentTarget, ids)}>
           <Avatar user={assignee} size={18} />
           {assignee?.name ?? t('common.noAssignee')}
+        </button>
+      </Prop>
+      <Prop label={t('prop.reviewer')}>
+        <button class={`prop-pill${reviewer ? '' : ' muted'}`} data-prop="reviewer" onClick={(e) => pickReviewer(e.currentTarget, ids)}>
+          <Avatar user={reviewer} size={18} />
+          {reviewer?.name ?? t('common.noReviewer')}
         </button>
       </Prop>
       <Prop label={t('prop.labels')}>
@@ -266,6 +277,15 @@ function labelNodes(ids: ID[] | undefined): ComponentChildren {
   ));
 }
 
+function fileNodes(names: string[] | undefined): ComponentChildren {
+  return (names ?? []).map((name, i) => (
+    <>
+      {i > 0 && ', '}
+      <strong>{name}</strong>
+    </>
+  ));
+}
+
 function describeActivity(a: Activity): ComponentChildren {
   const actor = userName(a.actorId);
   const { from, to } = a.data;
@@ -284,6 +304,10 @@ function describeActivity(a: Activity): ComponentChildren {
       if (!to) return tx('activity.unassigned', { actor, from: userName(from) });
       if (to === a.actorId) return tx('activity.selfAssigned', { actor });
       return tx('activity.assigned', { actor, to: userName(to) });
+    case 'reviewer':
+      if (!to) return tx('activity.reviewerRemoved', { actor, from: userName(from) });
+      if (to === a.actorId) return tx('activity.selfReviewer', { actor });
+      return tx('activity.reviewer', { actor, to: userName(to) });
     case 'sprint':
       return to ? tx('activity.sprint', { actor, to: sprintNode(to) }) : tx('activity.sprintRemoved', { actor, from: sprintNode(from) });
     case 'estimate':
@@ -294,6 +318,12 @@ function describeActivity(a: Activity): ComponentChildren {
       const parts: ComponentChildren[] = [];
       if (a.data.added?.length) parts.push(tx('activity.labelsAdded', { actor, labels: labelNodes(a.data.added) }));
       if (a.data.removed?.length) parts.push(tx(a.data.added?.length ? 'activity.labelsRemovedAnd' : 'activity.labelsRemoved', { actor, labels: labelNodes(a.data.removed) }));
+      return parts;
+    }
+    case 'attachments': {
+      const parts: ComponentChildren[] = [];
+      if (a.data.added?.length) parts.push(tx('activity.attached', { actor, files: fileNodes(a.data.added) }));
+      if (a.data.removed?.length) parts.push(tx(a.data.added?.length ? 'activity.attachmentsRemovedAnd' : 'activity.attachmentsRemoved', { actor, files: fileNodes(a.data.removed) }));
       return parts;
     }
     case 'deleted':
@@ -362,6 +392,7 @@ function CommentItem({ comment, onChanged }: { comment: Comment; onChanged: () =
               onValue={setDraft}
               minRows={2}
               autoFocus
+              onFiles={(files) => attachAndLink(comment.taskId, files)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save();
                 if (e.key === 'Escape') {
@@ -467,6 +498,7 @@ function Timeline({ task }: { task: Task }) {
             onValue={setDraft}
             minRows={2}
             placeholder={t('comment.placeholder')}
+            onFiles={(files) => attachAndLink(task.id, files)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
@@ -511,10 +543,14 @@ function moreMenu(anchor: Element, task: Task) {
   });
 }
 
+const draggingFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+
 export function TaskPanel() {
   const ref = openTaskRef.value;
   const task = openTask.value;
   const panelRef = useRef<HTMLElement>(null);
+  const [dropping, setDropping] = useState(false);
+  const dragDepth = useRef(0);
 
   useHotkeys({
     escape: () => {
@@ -526,6 +562,23 @@ export function TaskPanel() {
   useEffect(() => {
     panelRef.current?.querySelector('.panel-body')?.scrollTo({ top: 0 });
   }, [task?.id]);
+
+  // Pasting a file (a screenshot, say) while no text field has focus attaches it to the open task.
+  // Text fields handle their own pastes and add a link as well.
+  const taskId = task?.id;
+  useEffect(() => {
+    if (!taskId) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.defaultPrevented || hasLayer() || el?.closest('input, textarea, [contenteditable]')) return;
+      const files = pastedFiles(e.clipboardData);
+      if (!files.length) return;
+      e.preventDefault();
+      uploadFiles(taskId, files);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [taskId]);
 
   if (!ref) return null;
   if (!task) {
@@ -550,9 +603,40 @@ export function TaskPanel() {
     if (next) openTaskPanel(next, { replace: true });
   };
   const creator = task.creatorId ? users.value[task.creatorId] : null;
+  const endDrag = () => {
+    dragDepth.current = 0;
+    setDropping(false);
+  };
 
   return (
-    <aside class="panel" ref={panelRef} aria-label={task.title} data-task-id={task.id}>
+    <aside
+      class={`panel${dropping ? ' dropping' : ''}`}
+      ref={panelRef}
+      aria-label={task.title}
+      data-task-id={task.id}
+      onDragEnter={(e) => {
+        if (!draggingFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current++;
+        setDropping(true);
+      }}
+      onDragOver={(e) => {
+        if (!draggingFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer!.dropEffect = 'copy';
+      }}
+      onDragLeave={(e) => {
+        if (draggingFiles(e) && --dragDepth.current <= 0) endDrag();
+      }}
+      onDrop={(e) => {
+        if (!draggingFiles(e)) return;
+        endDrag();
+        // A text field that took the drop has already attached the files and linked them.
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+        uploadFiles(task.id, [...e.dataTransfer!.files]);
+      }}
+    >
       <div class="panel-header">
         <span class="crumbs">
           <span class="project-badge" style={{ background: project?.color }}>
@@ -578,6 +662,9 @@ export function TaskPanel() {
         <button class="icon-btn" title={t('task.copyBranch')} onClick={() => copyText(branchName(task), t('toast.branchCopied'))}>
           <GitBranch size={16} />
         </button>
+        <button class="icon-btn" title={t('attach.add')} onClick={() => attachFiles(task.id)}>
+          <Paperclip size={16} />
+        </button>
         <button class="icon-btn" title={t('common.more')} onClick={(e) => moreMenu(e.currentTarget, task)}>
           <MoreHorizontal size={16} />
         </button>
@@ -589,12 +676,19 @@ export function TaskPanel() {
         <TitleEditor task={task} />
         <Properties task={task} />
         <DescriptionEditor task={task} />
+        <Attachments task={task} />
         <div class="panel-meta">
           {tx('task.createdBy', { name: <strong>{creator?.name ?? t('common.someone')}</strong>, time: relativeTime(task.createdAt) })}
           {task.updatedAt - task.createdAt > 60_000 && <> · {t('task.updated', { time: relativeTime(task.updatedAt) })}</>}
         </div>
         <Timeline task={task} />
       </div>
+      {dropping && (
+        <div class="drop-overlay">
+          <Paperclip size={22} />
+          {t('attach.drop', { ref: taskRef(task) })}
+        </div>
+      )}
     </aside>
   );
 }

@@ -9,16 +9,22 @@ import { EmptyState, PageHeader, viewContext } from '../components/PageHeader';
 import { useViewState, ViewBar } from '../components/ViewBar';
 import { openCreateTask } from '../components/CreateTask';
 
-type Tab = 'assigned' | 'created';
+type Tab = 'assigned' | 'review' | 'created';
+
+const TAB_FIELD = { assigned: 'assigneeId', review: 'reviewerId', created: 'creatorId' } as const;
+const EMPTY_TITLE = { assigned: 'empty.myTitle', review: 'empty.reviewTitle', created: 'empty.createdTitle' } as const;
 const DISPLAY: Display = { groupBy: 'status', orderBy: 'priority', completed: 'recent', showEmpty: false };
 
 export function MyTasks() {
-  const [tab, setTab] = useState<Tab>(() => load('myTab', 'assigned'));
+  const [tab, setTab] = useState<Tab>(() => {
+    const stored = load<Tab>('myTab', 'assigned');
+    return stored in TAB_FIELD ? stored : 'assigned';
+  });
   const [state, update] = useViewState(`my:${tab}`, DISPLAY);
   const user = me.value!;
   const all = taskList.value;
   const mine = useMemo(
-    () => all.filter((x) => projects.value[x.projectId] && !projects.value[x.projectId].archived && (tab === 'assigned' ? x.assigneeId === user.id : x.creatorId === user.id)),
+    () => all.filter((x) => projects.value[x.projectId] && !projects.value[x.projectId].archived && x[TAB_FIELD[tab]] === user.id),
     [all, tab, user.id],
   );
   const ctx = viewContext();
@@ -38,13 +44,16 @@ export function MyTasks() {
             <button class={`tab${tab === 'assigned' ? ' active' : ''}`} onClick={() => choose('assigned')}>
               {t('my.assigned')}
             </button>
+            <button class={`tab${tab === 'review' ? ' active' : ''}`} onClick={() => choose('review')}>
+              {t('my.review')}
+            </button>
             <button class={`tab${tab === 'created' ? ' active' : ''}`} onClick={() => choose('created')}>
               {t('my.created')}
             </button>
           </>
         }
         actions={
-          <button class="btn primary sm" onClick={() => openCreateTask(tab === 'assigned' ? { assigneeId: user.id } : {})}>
+          <button class="btn primary sm" onClick={() => openCreateTask(tab === 'created' ? {} : { [TAB_FIELD[tab]]: user.id })}>
             <Plus size={14} />
             <span class="hide-sm">{t('task.new')}</span>
           </button>
@@ -53,7 +62,7 @@ export function MyTasks() {
       <ViewBar state={state} update={update} groupOptions={['status', 'priority', 'label', 'none']} fields={['statuses', 'priorities', 'labels']} />
       <div class="page-scroll">
         {mine.length === 0 ? (
-          <EmptyState icon={<CheckCircle2 size={28} />} title={tab === 'assigned' ? t('empty.myTitle') : t('empty.createdTitle')} text={t('empty.myText')} />
+          <EmptyState icon={<CheckCircle2 size={28} />} title={t(EMPTY_TITLE[tab])} text={t('empty.myText')} />
         ) : (
           <>
             <ListView groups={groups} orderBy={state.display.orderBy} viewKey={`my:${tab}:${state.display.groupBy}`} showSprint />

@@ -20,7 +20,7 @@ export const now = () => Date.now();
 /** An error that is reported to the client with the given HTTP status. */
 export class HttpError extends Error {
   constructor(
-    public status: 400 | 401 | 403 | 404 | 409 | 429,
+    public status: 400 | 401 | 403 | 404 | 409 | 413 | 429,
     public code: string,
     message?: string,
   ) {

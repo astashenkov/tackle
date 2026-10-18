@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
 import { backupDatabase, defaultBackupPath } from './backup';
@@ -12,11 +13,13 @@ if (command === 'backup') {
   const file = backupDatabase(db, arg ?? defaultBackupPath(config.databasePath));
   db.close();
   console.log(`Backup written to ${file}`);
+  if (fs.existsSync(config.attachmentsDir)) console.log(`Attached files are not part of it: back up ${config.attachmentsDir} as well.`);
   process.exit(0);
 }
 
 const db = new DB(config.databasePath);
-const { app } = createApp({ db, publicDir: config.publicDir });
+const { app, ctx } = createApp({ db, publicDir: config.publicDir });
+ctx.files.sweep();
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
   const host = config.host === '0.0.0.0' ? 'localhost' : config.host;

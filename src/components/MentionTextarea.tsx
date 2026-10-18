@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
+import { pastedFiles } from '../lib/files';
 import { userList } from '../store/data';
 import { Avatar } from './Avatar';
 import { matchScore } from './Picker';
@@ -9,10 +10,12 @@ type Props = Omit<JSX.TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'on
   onValue: (v: string) => void;
   minRows?: number;
   textareaRef?: { current: HTMLTextAreaElement | null };
+  /** Takes files pasted or dropped into the field; the text it returns is inserted at the cursor. */
+  onFiles?: (files: File[]) => string;
 };
 
 /** Auto-growing textarea with @mention autocomplete. */
-export function MentionTextarea({ value, onValue, minRows = 3, textareaRef, onKeyDown, class: cls, ...rest }: Props) {
+export function MentionTextarea({ value, onValue, minRows = 3, textareaRef, onKeyDown, onFiles, class: cls, ...rest }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
   const [active, setActive] = useState(0);
@@ -65,6 +68,22 @@ export function MentionTextarea({ value, onValue, minRows = 3, textareaRef, onKe
     });
   };
 
+  const takeFiles = (e: Event, files: File[]) => {
+    const el = ref.current;
+    if (!onFiles || !files.length || !el) return;
+    e.preventDefault();
+    const text = onFiles(files);
+    if (!text) return;
+    const start = el.selectionStart ?? value.length;
+    const next = value.slice(0, start) + text + value.slice(el.selectionEnd ?? start);
+    // Update the field right away so the caret lands after the link even if typing continues at once;
+    // the re-render then finds the value unchanged and leaves the caret alone.
+    el.value = next;
+    el.focus();
+    el.setSelectionRange(start + text.length, start + text.length);
+    onValue(next);
+  };
+
   const handleKey = (e: JSX.TargetedKeyboardEvent<HTMLTextAreaElement>) => {
     if (mention && suggestions.length) {
       if (e.key === 'ArrowDown') {
@@ -109,6 +128,8 @@ export function MentionTextarea({ value, onValue, minRows = 3, textareaRef, onKe
           detect(el);
         }}
         onKeyDown={handleKey}
+        onPaste={(e) => takeFiles(e, pastedFiles(e.clipboardData))}
+        onDrop={(e) => takeFiles(e, [...(e.dataTransfer?.files ?? [])])}
         onBlur={() => setTimeout(() => setMention(null), 120)}
         onClick={(e) => detect(e.currentTarget)}
       />

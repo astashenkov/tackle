@@ -49,9 +49,30 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+/** Sends a file as the raw request body. Uses XHR because fetch can't report upload progress. */
+function upload<T>(path: string, file: Blob, onProgress?: (loaded: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api${path}`);
+    xhr.responseType = 'json';
+    xhr.setRequestHeader('X-Client-Id', clientId);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = (e) => onProgress?.(e.loaded);
+    xhr.onload = () => {
+      const data = xhr.response;
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data as T);
+      if (xhr.status === 401) onUnauthorized?.();
+      reject(new ApiError(xhr.status, data?.error ?? 'http', data?.message ?? xhr.statusText));
+    };
+    xhr.onerror = () => reject(new ApiError(0, 'network', 'network'));
+    xhr.send(file);
+  });
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body: unknown = {}) => request<T>('POST', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
+  upload,
 };

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { CircleDot, Filter, SignalHigh, SlidersHorizontal, Tag, Timer, User as UserIcon, X, Search, UserMinus, CircleSlash } from 'lucide-preact';
+import { CircleDot, Eye, Filter, SignalHigh, SlidersHorizontal, Tag, Timer, User as UserIcon, X, Search, UserMinus, CircleSlash } from 'lucide-preact';
 import { PRIORITY_ORDER } from '../../shared/constants';
 import type { ID, Priority } from '../../shared/types';
 import { useHotkeys } from '../lib/hotkeys';
@@ -38,15 +38,16 @@ export function useViewState(key: string, defaults: Display): [ViewState, (patch
   return [state, update];
 }
 
-type FilterField = 'statuses' | 'assignees' | 'priorities' | 'labels' | 'sprints';
+type FilterField = 'statuses' | 'assignees' | 'reviewers' | 'priorities' | 'labels' | 'sprints';
 
 function fieldItems(field: FilterField, projectId?: ID): PickerItem[] {
   switch (field) {
     case 'statuses':
       return statusList.value.map((s) => ({ id: s.id, label: s.name, icon: <StatusIcon category={s.category} color={s.color} /> }));
     case 'assignees':
+    case 'reviewers':
       return [
-        { id: 'none', label: t('common.noAssignee'), icon: <UserMinus size={14} /> },
+        { id: 'none', label: field === 'assignees' ? t('common.noAssignee') : t('common.noReviewer'), icon: <UserMinus size={14} /> },
         ...userList.value.map((u) => ({ id: u.id, label: u.id === me.value?.id ? `${u.name} (${t('common.you')})` : u.name, icon: <Avatar user={u} size={16} />, keywords: u.handle })),
       ];
     case 'priorities':
@@ -66,6 +67,7 @@ function fieldMeta(field: FilterField): { label: string; icon: ComponentChildren
   return {
     statuses: { label: t('prop.status'), icon: <CircleDot size={14} /> },
     assignees: { label: t('prop.assignee'), icon: <UserIcon size={14} /> },
+    reviewers: { label: t('prop.reviewer'), icon: <Eye size={14} /> },
     priorities: { label: t('prop.priority'), icon: <SignalHigh size={14} /> },
     labels: { label: t('prop.labels'), icon: <Tag size={14} /> },
     sprints: { label: t('prop.sprint'), icon: <Timer size={14} /> },
@@ -78,6 +80,8 @@ function valueLabel(field: FilterField, id: string): string {
       return statuses.value[id]?.name ?? '?';
     case 'assignees':
       return id === 'none' ? t('common.noAssignee') : (users.value[id]?.name.split(' ')[0] ?? '?');
+    case 'reviewers':
+      return id === 'none' ? t('common.noReviewer') : (users.value[id]?.name.split(' ')[0] ?? '?');
     case 'priorities':
       return priorityName(Number(id) as Priority);
     case 'labels':
@@ -93,7 +97,7 @@ export function ViewBar({
   projectId,
   groupOptions,
   hideGrouping = false,
-  fields = ['statuses', 'assignees', 'priorities', 'labels', 'sprints'],
+  fields = ['statuses', 'assignees', 'reviewers', 'priorities', 'labels', 'sprints'],
   children,
 }: {
   state: ViewState;

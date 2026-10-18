@@ -1,6 +1,6 @@
-import { useMemo } from 'preact/hooks';
+import { useEffect, useMemo, useRef } from 'preact/hooks';
 import { renderMarkdown, toggleCheckbox, type MarkdownContext } from '../lib/markdown';
-import { findTaskByRef, isClosed, usersByHandle, tasks, users } from '../store/data';
+import { attachments, findTaskByRef, isClosed, usersByHandle, tasks, users } from '../store/data';
 import { route } from '../lib/router';
 
 export function markdownContext(): MarkdownContext {
@@ -18,6 +18,16 @@ export function Markdown({ source, onChange, class: cls = '' }: { source: string
   // Re-render when tasks/users change so references stay fresh.
   const deps = [source, tasks.value, users.value, route.value.path];
   const html = useMemo(() => renderMarkdown(source, markdownContext()), deps);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // An image pasted into a text can be shown before its upload has finished: load it again
+  // once the attachment arrives.
+  useEffect(() => {
+    for (const img of ref.current?.querySelectorAll<HTMLImageElement>('img[data-failed]') ?? []) {
+      delete img.dataset.failed;
+      img.src = `${img.src.split('?')[0]}?retry=${Date.now()}`;
+    }
+  }, [attachments.value]);
 
   const onClick = (e: MouseEvent) => {
     const el = e.target as HTMLElement;
@@ -28,5 +38,16 @@ export function Markdown({ source, onChange, class: cls = '' }: { source: string
     }
   };
 
-  return <div class={`markdown ${cls}`} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <div
+      ref={ref}
+      class={`markdown ${cls}`}
+      onClick={onClick}
+      onErrorCapture={(e) => {
+        const img = e.target;
+        if (img instanceof HTMLImageElement && new URL(img.src).pathname.startsWith('/api/attachments/')) img.dataset.failed = '';
+      }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }

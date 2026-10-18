@@ -17,7 +17,7 @@ import { Popovers, closeAllPopovers } from './components/Popover';
 import { Sidebar } from './components/Sidebar';
 import { TaskPanel, confirmDelete, openTaskPanel } from './components/TaskPanel';
 import { Toasts } from './components/Toasts';
-import { anchorFor, pickAssignee, pickDueDate, pickEstimate, pickLabels, pickPriority, pickSprint, pickStatus, toggleAssignMe } from './components/pickers';
+import { anchorFor, pickAssignee, pickDueDate, pickEstimate, pickLabels, pickPriority, pickReviewer, pickSprint, pickStatus, toggleAssignMe } from './components/pickers';
 import { Join, Login, Logo, Reset, Setup } from './pages/Auth';
 import { Inbox } from './pages/Inbox';
 import { MyTasks } from './pages/MyTasks';
@@ -125,6 +125,7 @@ function GlobalHotkeys() {
     s: act((ids) => pickStatus(anchorFor(ids[0], 'status'), ids)),
     p: act((ids) => pickPriority(anchorFor(ids[0], 'priority'), ids)),
     a: act((ids) => pickAssignee(anchorFor(ids[0], 'assignee'), ids)),
+    r: act((ids) => pickReviewer(anchorFor(ids[0], 'reviewer'), ids)),
     l: act((ids) => pickLabels(anchorFor(ids[0], 'labels'), ids)),
     e: act((ids) => pickEstimate(anchorFor(ids[0], 'estimate'), ids)),
     d: act((ids) => pickDueDate(anchorFor(ids[0], 'due'), ids)),
@@ -184,6 +185,15 @@ function Splash({ error }: { error?: boolean }) {
       )}
     </div>
   );
+}
+
+// A file dropped anywhere but a drop zone would make the browser open it in place of Tackle.
+for (const type of ['dragover', 'drop'] as const) {
+  window.addEventListener(type, (e) => {
+    if (e.defaultPrevented || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'none';
+  });
 }
 
 export function App() {

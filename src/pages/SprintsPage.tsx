@@ -189,7 +189,7 @@ export function SprintsPage({ project }: { project: Project }) {
               {t('sprint.new')}
             </button>
           </div>
-          <ViewBar state={state} update={update} projectId={project.id} groupOptions={['sprint']} hideGrouping fields={['statuses', 'assignees', 'priorities', 'labels']} />
+          <ViewBar state={state} update={update} projectId={project.id} groupOptions={['sprint']} hideGrouping fields={['statuses', 'assignees', 'reviewers', 'priorities', 'labels']} />
           <ListView
             groups={groups}
             orderBy={state.display.orderBy}

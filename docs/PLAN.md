@@ -175,7 +175,8 @@ Ordered by value to a small team.
 | # | Item | Notes |
 | --- | --- | --- |
 | 1 | **CI** | GitHub Actions: typecheck, unit/API tests, e2e in Chromium, Docker build. |
-| 2 | **File attachments** | Paste or drop images into descriptions and comments. Store them on disk next to the database with a size limit, and serve them only to signed-in users. |
+| 2 | **File attachments** ✅ | Done: attach files to a task (button, drag and drop, paste); screenshots pasted into descriptions and comments show inline. Stored on disk next to the database with a size limit (`MAX_UPLOAD_MB`), served only to signed-in users. |
+| — | **Reviewer** ✅ | Done: a second person on a task who reviews the work. Notified like the assignee, has its own *My tasks → To review* tab, filter and `R` shortcut. |
 | 3 | **Notifications outside the app** | Browser notifications for new inbox items, and an optional daily email digest via SMTP. |
 | 4 | **Sub-tasks** | A parent link with a progress indicator. Checklists remain the lightweight option. |
 | 5 | **Saved views** | Share a filter set via the URL and pin it to the sidebar. |

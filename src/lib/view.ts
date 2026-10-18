@@ -10,6 +10,7 @@ export type CompletedMode = 'recent' | 'all' | 'none';
 export interface Filters {
   statuses: ID[];
   assignees: string[]; // user ids or "none"
+  reviewers: string[]; // user ids or "none"
   priorities: Priority[];
   labels: ID[];
   sprints: string[]; // sprint ids, "none" or "active"
@@ -23,10 +24,10 @@ export interface Display {
   showEmpty: boolean;
 }
 
-export const emptyFilters = (): Filters => ({ statuses: [], assignees: [], priorities: [], labels: [], sprints: [], q: '' });
+export const emptyFilters = (): Filters => ({ statuses: [], assignees: [], reviewers: [], priorities: [], labels: [], sprints: [], q: '' });
 
 export const activeFilterCount = (f: Filters) =>
-  f.statuses.length + f.assignees.length + f.priorities.length + f.labels.length + f.sprints.length;
+  f.statuses.length + f.assignees.length + f.reviewers.length + f.priorities.length + f.labels.length + f.sprints.length;
 
 export interface ViewContext {
   statuses: Record<ID, Status>;
@@ -70,6 +71,7 @@ export function filterTasks(tasks: Task[], f: Filters, d: Pick<Display, 'complet
     }
     if (f.statuses.length && !f.statuses.includes(t.statusId)) return false;
     if (f.assignees.length && !f.assignees.includes(t.assigneeId ?? 'none')) return false;
+    if (f.reviewers.length && !f.reviewers.includes(t.reviewerId ?? 'none')) return false;
     if (f.priorities.length && !f.priorities.includes(t.priority)) return false;
     if (f.labels.length && !f.labels.some((l) => t.labelIds.includes(l))) return false;
     if (f.sprints.length) {

@@ -122,6 +122,7 @@ db.tx(() => {
     s: string;
     p?: number;
     a?: string;
+    r?: string;
     l?: string[];
     e?: number;
     sp?: string;
@@ -140,9 +141,9 @@ db.tx(() => {
     const created = Math.min(T - (8 + Math.floor(random() * 20)) * DAY, (completedAt ?? T) - 6 * DAY);
     const started = t.s === 'In Progress' || t.s === 'In Review' || closed ? (completedAt ?? T) - 2 * DAY : null;
     db.run(
-      `INSERT INTO tasks (id, project_id, number, title, description, status_id, priority, assignee_id, creator_id, sprint_id,
-        estimate, due_date, position, created_at, updated_at, started_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (id, project_id, number, title, description, status_id, priority, assignee_id, reviewer_id, creator_id,
+        sprint_id, estimate, due_date, position, created_at, updated_at, started_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       tid,
       proj[key],
       number,
@@ -151,6 +152,7 @@ db.tx(() => {
       status[t.s],
       t.p ?? 0,
       t.a ? u[t.a] : null,
+      t.r ? u[t.r] : null,
       u[pick(['alex', 'maria', 'ivan', 'sofia'])],
       t.sp ?? null,
       t.e ?? null,
@@ -197,6 +199,7 @@ db.tx(() => {
     s: 'In Progress',
     p: 1,
     a: 'ivan',
+    r: 'alex',
     e: 5,
     l: ['Bug', 'Backend'],
     sp: web3,
@@ -212,7 +215,7 @@ db.tx(() => {
 
 Related: WEB-14. cc @maria`,
   });
-  add('WEB', { title: 'Dashboard: new KPI cards', s: 'In Review', p: 2, a: 'sofia', e: 3, l: ['Feature', 'Design'], sp: web3 });
+  add('WEB', { title: 'Dashboard: new KPI cards', s: 'In Review', p: 2, a: 'sofia', r: 'alex', e: 3, l: ['Feature', 'Design'], sp: web3 });
   add('WEB', {
     title: 'Keyboard shortcuts for common actions',
     s: 'Todo',
@@ -229,8 +232,8 @@ Related: WEB-14. cc @maria`,
   add('WEB', { title: 'Avatar upload crops images incorrectly', s: 'Done', p: 2, a: 'maria', e: 2, l: ['Bug'], sp: web3, done: -2 });
   add('WEB', { title: 'Saved filters on the reports page', s: 'In Progress', p: 3, a: 'maria', e: 5, l: ['Feature'], sp: web3, due: 4 });
   add('WEB', { title: 'Dark mode contrast issues in charts', s: 'Todo', p: 4, a: 'sofia', e: 1, l: ['Design', 'Bug'], sp: web3 });
-  add('WEB', { title: 'Upgrade to Postgres 17', s: 'In Review', p: 2, a: 'dan', e: 3, l: ['Tech debt', 'Backend'], sp: web3, due: -1 });
-  add('WEB', { title: 'Export reports to CSV', s: 'Done', p: 3, a: 'ivan', e: 3, l: ['Feature'], sp: web3, done: -1 });
+  add('WEB', { title: 'Upgrade to Postgres 17', s: 'In Review', p: 2, a: 'dan', r: 'ivan', e: 3, l: ['Tech debt', 'Backend'], sp: web3, due: -1 });
+  add('WEB', { title: 'Export reports to CSV', s: 'Done', p: 3, a: 'ivan', r: 'maria', e: 3, l: ['Feature'], sp: web3, done: -1 });
   add('WEB', { title: 'Session expires too early on Safari', s: 'Todo', p: 1, a: 'dan', e: 2, l: ['Bug'], sp: web3, due: 1 });
 
   // Sprint 4 (planned)
@@ -254,7 +257,7 @@ Related: WEB-14. cc @maria`,
   add('MOB', { title: 'Offline queue for form submissions', s: 'In Progress', p: 1, a: 'dan', e: 8, l: ['Feature'], sp: mob1, due: 3 });
   add('MOB', { title: 'Sync conflicts resolution UI', s: 'Todo', p: 2, a: 'sofia', e: 5, l: ['Design'], sp: mob1 });
   add('MOB', { title: 'Crash on Android 12 when opening camera', s: 'Done', p: 1, a: 'maria', e: 2, l: ['Bug'], sp: mob1, done: -6 });
-  add('MOB', { title: 'Cache map tiles for offline use', s: 'In Review', p: 2, a: 'ivan', e: 5, l: ['Feature'], sp: mob1 });
+  add('MOB', { title: 'Cache map tiles for offline use', s: 'In Review', p: 2, a: 'ivan', r: 'dan', e: 5, l: ['Feature'], sp: mob1 });
   add('MOB', { title: 'Push notification permissions prompt', s: 'Done', p: 3, a: 'maria', e: 2, l: ['Improvement'], sp: mob1, done: -3 });
   add('MOB', { title: 'Biometric login', s: 'Backlog', p: 3, l: ['Feature'], e: 3 });
   add('MOB', { title: 'Reduce app bundle size', s: 'Backlog', p: 4, l: ['Tech debt'], e: 3 });
@@ -288,6 +291,7 @@ Related: WEB-14. cc @maria`,
       read ? T : null,
     );
   note('WEB-10', 'ivan', 'mention', { taskTitle: 'Search results page is slow for large workspaces', taskRef: 'WEB-10', excerpt: comments[1][1] }, 26);
+  note('WEB-11', 'sofia', 'review', { taskTitle: 'Dashboard: new KPI cards', taskRef: 'WEB-11' }, 3);
   note('WEB-19', 'dan', 'status', { taskTitle: 'Upgrade to Postgres 17', taskRef: 'WEB-19', statusId: status['In Review'] }, 5);
   note('WEB-21', 'maria', 'assigned', { taskTitle: 'Session expires too early on Safari', taskRef: 'WEB-21' }, 50, true);
 

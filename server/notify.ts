@@ -1,11 +1,13 @@
 import type { NotificationKind, Task } from '../shared/types';
 import { toNotification, type DB } from './db';
 import type { EventHub } from './events';
+import type { FileStore } from './files';
 import { now } from './util';
 
 export interface Ctx {
   db: DB;
   hub: EventHub;
+  files: FileStore;
 }
 
 export function taskRef(db: DB, task: Task): string {
@@ -13,11 +15,12 @@ export function taskRef(db: DB, task: Task): string {
   return `${p?.key ?? '?'}-${task.number}`;
 }
 
-/** Users who care about a task: its creator, assignee and everyone who commented on it. */
+/** Users who care about a task: its creator, assignee, reviewer and everyone who commented on it. */
 export function watchers(db: DB, task: Task): Set<string> {
   const ids = new Set<string>();
   if (task.creatorId) ids.add(task.creatorId);
   if (task.assigneeId) ids.add(task.assigneeId);
+  if (task.reviewerId) ids.add(task.reviewerId);
   for (const r of db.all<{ author_id: string }>('SELECT DISTINCT author_id FROM comments WHERE task_id = ? AND author_id IS NOT NULL', task.id)) {
     ids.add(r.author_id);
   }

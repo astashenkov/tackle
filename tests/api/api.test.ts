@@ -1,12 +1,14 @@
-import { beforeEach, describe, test } from 'node:test';
+import { afterEach, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Activity, Notification, Snapshot, Sprint, Task } from '../../shared/types';
+import type { Activity, Attachment, Notification, Snapshot, Sprint, Task } from '../../shared/types';
 import { createApp } from '../../server/app';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { hashPassword } from '../../server/auth';
 import { backupDatabase } from '../../server/backup';
-import { DB } from '../../server/db';
+import { DB, MIGRATIONS } from '../../server/db';
 
 type App = ReturnType<typeof createApp>['app'];
 
@@ -33,17 +35,36 @@ class Client {
   post = <T = any>(p: string, b: unknown = {}) => this.req<T>('POST', p, b);
   patch = <T = any>(p: string, b: unknown) => this.req<T>('PATCH', p, b);
   del = <T = any>(p: string) => this.req<T>('DELETE', p);
+
+  /** Uploads a file the way the browser does: the body is the file, the name goes in the query. */
+  async upload<T = any>(taskId: string, body: BodyInit, opts: { name?: string; type?: string; id?: string; headers?: Record<string, string> } = {}) {
+    const query = new URLSearchParams({ name: opts.name ?? 'notes.txt', ...(opts.id ? { id: opts.id } : {}) });
+    const res = await this.app.request(`/api/tasks/${taskId}/attachments?${query}`, {
+      method: 'POST',
+      headers: { 'content-type': opts.type ?? 'text/plain', ...(this.cookie ? { cookie: this.cookie } : {}), ...opts.headers },
+      body,
+    });
+    return { status: res.status, data: (await res.json()) as T };
+  }
+
+  /** Fetches a raw response (for file downloads). */
+  fetch(path: string, headers: Record<string, string> = {}) {
+    return this.app.request(`/api${path}`, { headers: { ...(this.cookie ? { cookie: this.cookie } : {}), ...headers } });
+  }
 }
 
 let app: App;
 let hub: ReturnType<typeof createApp>['hub'];
 let admin: Client;
 let snap: Snapshot;
+let filesDir: string;
+const UPLOAD_LIMIT = 64 * 1024;
 
 const status = (name: string) => snap.statuses.find((s) => s.name === name)!.id;
 
 beforeEach(async () => {
-  ({ app, hub } = createApp({ db: new DB(':memory:') }));
+  filesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tackle-files-'));
+  ({ app, hub } = createApp({ db: new DB(':memory:'), attachmentsDir: filesDir, maxUploadBytes: UPLOAD_LIMIT }));
   admin = new Client(app);
   const res = await admin.post('/setup', {
     workspaceName: 'Acme',
@@ -56,6 +77,8 @@ beforeEach(async () => {
   assert.equal(res.status, 201);
   snap = (await admin.get<Snapshot>('/sync')).data;
 });
+
+afterEach(() => fs.rmSync(filesDir, { recursive: true, force: true }));
 
 async function invite(name: string, email: string): Promise<Client> {
   const inv = await admin.post('/invites', { role: 'member' });
@@ -343,5 +366,209 @@ describe('workflow', () => {
     const res = await admin.get('/export');
     assert.equal(res.data.tasks.length, 1);
     assert.ok(!JSON.stringify(res.data).includes('scrypt$'));
+  });
+});
+
+describe('reviewer', () => {
+  test('the reviewer is notified, kept up to date and recorded in the history', async () => {
+    const maria = await invite('Maria Petrova', 'maria@example.com');
+    const ids = Object.fromEntries((await admin.get<Snapshot>('/sync')).data.users.map((u) => [u.handle, u.id]));
+    const p = snap.projects[0].id;
+
+    const t = (await admin.post<Task>('/tasks', { projectId: p, title: 'Review me', reviewerId: ids.maria })).data;
+    assert.equal(t.reviewerId, ids.maria);
+    assert.deepEqual((await maria.get<Notification[]>('/notifications')).data.map((n) => n.kind), ['review']);
+
+    // Like the assignee, the reviewer hears about comments and status changes.
+    await admin.post(`/tasks/${t.id}/comments`, { body: 'Ready when you are' });
+    await admin.patch(`/tasks/${t.id}`, { statusId: status('In Review') });
+    const kinds = (await maria.get<Notification[]>('/notifications')).data.map((n) => n.kind);
+    assert.deepEqual(kinds.sort(), ['comment', 'review', 'status']);
+
+    const cleared = (await admin.patch<Task>(`/tasks/${t.id}`, { reviewerId: null })).data;
+    assert.equal(cleared.reviewerId, null);
+    const { activity } = (await admin.get<{ activity: Activity[] }>(`/tasks/${t.id}/timeline`)).data;
+    assert.deepEqual(activity.map((a) => a.kind), ['created', 'status', 'reviewer']);
+    assert.deepEqual(activity[2].data, { from: ids.maria, to: null });
+
+    assert.equal((await admin.patch(`/tasks/${t.id}`, { reviewerId: 'nobodyAtAll1' })).status, 400);
+    const other = (await admin.post<Task>('/tasks', { projectId: p, title: 'Another' })).data;
+    const bulk = await admin.post<Task[]>('/tasks/bulk', { ids: [t.id, other.id], patch: { reviewerId: ids.alex } });
+    assert.deepEqual(bulk.data.map((x) => x.reviewerId), [ids.alex, ids.alex]);
+    assert.ok((await admin.get<Snapshot>('/sync')).data.tasks.every((x) => x.reviewerId === ids.alex));
+  });
+});
+
+describe('attachments', () => {
+  const newTask = async (title = 'With files') => (await admin.post<Task>('/tasks', { projectId: snap.projects[0].id, title })).data;
+
+  test('uploads, serves and deletes a file', async () => {
+    const t = await newTask();
+    const events: { type: string; origin: string }[] = [];
+    hub.add({ userId: 'observer', clientId: 'observer', send: (p) => events.push(JSON.parse(p)) });
+
+    const up = await admin.upload<Attachment>(t.id, 'hello world', { name: 'notes.txt', headers: { 'x-client-id': 'tab-1' } });
+    assert.equal(up.status, 201);
+    const a = up.data;
+    assert.equal(a.name, 'notes.txt');
+    assert.equal(a.size, 11);
+    assert.equal(a.type, 'text/plain');
+    assert.equal(a.uploaderId, snap.me.id);
+    assert.ok(fs.existsSync(path.join(filesDir, a.id)));
+    assert.deepEqual(events.map((e) => [e.type, e.origin]), [['attachment.upsert', 'tab-1'], ['timeline', '']]);
+
+    const synced = (await admin.get<Snapshot>('/sync')).data;
+    assert.deepEqual(synced.attachments.map((x) => x.id), [a.id]);
+    assert.equal(synced.uploadLimit, UPLOAD_LIMIT);
+
+    const res = await admin.fetch(`/attachments/${a.id}`);
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'hello world');
+    assert.equal(res.headers.get('content-type'), 'text/plain; charset=utf-8');
+    assert.match(res.headers.get('content-disposition')!, /^inline; filename="notes.txt"/);
+    assert.match(res.headers.get('cache-control')!, /private/);
+    assert.match(res.headers.get('content-security-policy')!, /sandbox/);
+    assert.match((await admin.fetch(`/attachments/${a.id}?download`)).headers.get('content-disposition')!, /^attachment/);
+
+    const part = await admin.fetch(`/attachments/${a.id}`, { range: 'bytes=6-' });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), 'bytes 6-10/11');
+    assert.equal(await part.text(), 'world');
+    assert.equal((await admin.fetch(`/attachments/${a.id}`, { range: 'bytes=50-' })).status, 416);
+    const head = await app.request(`/api/attachments/${a.id}`, { method: 'HEAD', headers: { cookie: admin.cookie } });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get('content-length'), '11');
+    assert.equal((await new Client(app).fetch(`/attachments/${a.id}`)).status, 401);
+
+    const maria = await invite('Maria', 'maria@example.com');
+    assert.equal((await maria.del(`/attachments/${a.id}`)).status, 403, 'only the uploader or an admin can delete');
+    assert.equal((await admin.del(`/attachments/${a.id}`)).status, 200);
+    assert.ok(!fs.existsSync(path.join(filesDir, a.id)));
+    assert.equal((await admin.fetch(`/attachments/${a.id}`)).status, 404);
+    assert.equal((await admin.get<Snapshot>('/sync')).data.attachments.length, 0);
+
+    // Attached and removed again right away: nothing left in the history.
+    const { activity } = (await admin.get<{ activity: Activity[] }>(`/tasks/${t.id}/timeline`)).data;
+    assert.deepEqual(activity.map((x) => x.kind), ['created']);
+  });
+
+  test('records attached and deleted files in the history', async () => {
+    const t = await newTask();
+    const maria = await invite('Maria', 'maria@example.com');
+    await admin.upload(t.id, 'a', { name: 'spec.pdf', type: 'application/pdf' });
+    await admin.upload(t.id, 'b', { name: 'mockup.png', type: 'image/png' });
+    const mine = (await maria.upload<Attachment>(t.id, 'c', { name: 'log.txt' })).data;
+    assert.equal((await admin.del(`/attachments/${mine.id}`)).status, 200, 'admins can delete any file');
+    const { activity } = (await admin.get<{ activity: Activity[] }>(`/tasks/${t.id}/timeline`)).data;
+    assert.deepEqual(
+      activity.map((x) => [x.kind, x.data]),
+      [
+        ['created', {}],
+        ['attachments', { added: ['spec.pdf', 'mockup.png'], removed: [] }],
+        ['attachments', { added: ['log.txt'] }],
+        ['attachments', { removed: ['log.txt'] }],
+      ],
+    );
+  });
+
+  test('never serves an uploaded page or script as part of the app', async () => {
+    const t = await newTask();
+    const html = (await admin.upload<Attachment>(t.id, '<script>alert(1)</script>', { name: 'evil.html', type: 'text/html' })).data;
+    const svg = (await admin.upload<Attachment>(t.id, '<svg xmlns="http://www.w3.org/2000/svg"/>', { name: 'logo.svg', type: 'image/svg+xml' })).data;
+    const exe = (await admin.upload<Attachment>(t.id, 'MZ', { name: '../../setup.exe', type: 'application/x-msdownload' })).data;
+    const pdf = (await admin.upload<Attachment>(t.id, '%PDF-1.4', { name: 'Отчёт.pdf', type: 'application/pdf' })).data;
+
+    const page = await admin.fetch(`/attachments/${html.id}`);
+    assert.equal(page.headers.get('content-type'), 'text/plain; charset=utf-8');
+    const image = await admin.fetch(`/attachments/${svg.id}`);
+    assert.equal(image.headers.get('content-type'), 'image/svg+xml');
+    assert.match(image.headers.get('content-disposition')!, /^attachment/);
+    assert.match(image.headers.get('content-security-policy')!, /sandbox/);
+    const binary = await admin.fetch(`/attachments/${exe.id}`);
+    assert.equal(binary.headers.get('content-type'), 'application/octet-stream');
+    assert.match(binary.headers.get('content-disposition')!, /^attachment/);
+    assert.equal(exe.name, '.._.._setup.exe');
+    const doc = await admin.fetch(`/attachments/${pdf.id}`);
+    assert.match(doc.headers.get('content-disposition')!, /^inline; filename="_____.pdf"; filename\*=UTF-8''%D0%9E%D1%82%D1%87%D1%91%D1%82\.pdf$/);
+    assert.deepEqual(fs.readdirSync(filesDir).filter((f) => f !== '.tmp').sort(), [html.id, svg.id, exe.id, pdf.id].sort());
+  });
+
+  test('rejects files over the limit, missing tasks and reused ids', async () => {
+    const t = await newTask();
+    const big = new Uint8Array(UPLOAD_LIMIT + 1);
+    assert.equal((await admin.upload(t.id, big, { name: 'big.bin', type: 'application/octet-stream' })).status, 413);
+    // Without a Content-Length the limit is enforced while the upload streams in.
+    const streamed = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < 4; i++) controller.enqueue(new Uint8Array(UPLOAD_LIMIT / 2));
+        controller.close();
+      },
+    });
+    const res = await app.request(`/api/tasks/${t.id}/attachments?name=stream.bin`, {
+      method: 'POST',
+      headers: { cookie: admin.cookie, 'content-type': 'application/octet-stream' },
+      body: streamed,
+      duplex: 'half',
+    } as RequestInit);
+    assert.equal(res.status, 413);
+    assert.deepEqual(fs.readdirSync(filesDir).filter((f) => f !== '.tmp'), []);
+    assert.deepEqual(fs.readdirSync(path.join(filesDir, '.tmp')), [], 'no half-written files are left behind');
+
+    assert.equal((await admin.upload('missingTask0001', 'x')).status, 404);
+    const first = await admin.upload<Attachment>(t.id, 'x', { id: 'clientFile01' });
+    assert.equal(first.data.id, 'clientFile01');
+    assert.equal((await admin.upload(t.id, 'y', { id: 'clientFile01' })).status, 400);
+    assert.equal((await admin.upload(t.id, 'y', { id: '../../etc' })).status, 400);
+    await admin.post('/tasks/delete', { ids: [t.id] });
+    assert.equal((await admin.upload(t.id, 'z')).status, 404, 'deleted tasks take no new files');
+  });
+
+  test('deleting a project removes its files from disk; the export lists them', async () => {
+    const t = await newTask();
+    const a = (await admin.upload<Attachment>(t.id, 'keep me', { name: 'a.txt' })).data;
+    const exported = (await admin.get('/export')).data;
+    assert.deepEqual(exported.attachments.map((x: Attachment) => x.name), ['a.txt']);
+    assert.equal((await admin.del(`/projects/${snap.projects[0].id}`)).status, 200);
+    assert.ok(!fs.existsSync(path.join(filesDir, a.id)));
+    assert.equal((await admin.get<Snapshot>('/sync')).data.attachments.length, 0);
+  });
+});
+
+describe('upgrade', () => {
+  test('a database left by v0.1 is upgraded in place and keeps its data', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tackle-upgrade-'));
+    const file = path.join(dir, 'tackle.db');
+    // The database as Tackle v0.1 left it: schema version 1 with some work in it.
+    const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
+    const old = new DatabaseSync(file);
+    old.exec(MIGRATIONS[0]);
+    old.exec('PRAGMA user_version = 1');
+    const t = Date.now();
+    old
+      .prepare("INSERT INTO users (id, email, name, handle, password_hash, role, color, created_at) VALUES ('userAlex0001', 'alex@example.com', 'Alex', 'alex', ?, 'admin', '#8b5cf6', ?)")
+      .run(await hashPassword('password123'), t);
+    old.exec(`
+      INSERT INTO statuses (id, name, category, color, position) VALUES ('statusTodo01', 'Todo', 'unstarted', '#94a3b8', 1);
+      INSERT INTO projects (id, key, name, color, next_number, position, created_at) VALUES ('projectWeb01', 'WEB', 'Web', '#6366f1', 2, 1, ${t});
+      INSERT INTO tasks (id, project_id, number, title, status_id, assignee_id, creator_id, position, created_at, updated_at)
+        VALUES ('taskOld00001', 'projectWeb01', 1, 'Made in v0.1', 'statusTodo01', 'userAlex0001', 'userAlex0001', 0, ${t}, ${t});
+      INSERT INTO comments (id, task_id, author_id, body, created_at, updated_at) VALUES ('commentOld01', 'taskOld00001', 'userAlex0001', 'Still here?', ${t}, ${t});
+    `);
+    old.close();
+
+    const db = new DB(file);
+    assert.equal(db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, MIGRATIONS.length);
+    const c = new Client(createApp({ db, attachmentsDir: path.join(dir, 'attachments') }).app);
+    assert.equal((await c.post('/login', { email: 'alex@example.com', password: 'password123' })).status, 200);
+    const s = (await c.get<Snapshot>('/sync')).data;
+    assert.deepEqual(s.tasks.map((x) => [x.title, x.assigneeId, x.reviewerId]), [['Made in v0.1', 'userAlex0001', null]]);
+    assert.deepEqual(s.attachments, []);
+    assert.equal((await c.get('/tasks/taskOld00001/timeline')).data.comments[0].body, 'Still here?');
+
+    // The new features work on tasks from before the upgrade.
+    assert.equal((await c.patch<Task>('/tasks/taskOld00001', { reviewerId: 'userAlex0001' })).data.reviewerId, 'userAlex0001');
+    assert.equal((await c.upload('taskOld00001', 'log')).status, 201);
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

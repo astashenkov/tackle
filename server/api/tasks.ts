@@ -31,6 +31,7 @@ export function parsePatch(raw: unknown): TaskPatch {
   if (b.statusId !== undefined) p.statusId = id(b.statusId, 'statusId');
   if (b.priority !== undefined) p.priority = int(b.priority, 'priority', 0, 4) as Priority;
   if (b.assigneeId !== undefined) p.assigneeId = b.assigneeId === null ? null : id(b.assigneeId, 'assigneeId');
+  if (b.reviewerId !== undefined) p.reviewerId = b.reviewerId === null ? null : id(b.reviewerId, 'reviewerId');
   if (b.sprintId !== undefined) p.sprintId = b.sprintId === null ? null : id(b.sprintId, 'sprintId');
   if (b.estimate !== undefined) p.estimate = b.estimate === null ? null : int(b.estimate, 'estimate', 0, 1000);
   if (b.dueDate !== undefined) p.dueDate = b.dueDate === null ? null : date(b.dueDate, 'dueDate');
@@ -50,6 +51,7 @@ function statusCategory(ctx: Ctx, statusId: string): StatusCategory {
 function checkRefs(ctx: Ctx, projectId: string, p: TaskPatch) {
   const { db } = ctx;
   if (p.assigneeId && !db.get('SELECT 1 FROM users WHERE id = ? AND active = 1', p.assigneeId)) throw badRequest('Unknown assignee');
+  if (p.reviewerId && !db.get('SELECT 1 FROM users WHERE id = ? AND active = 1', p.reviewerId)) throw badRequest('Unknown reviewer');
   if (p.sprintId) {
     const s = db.get<{ project_id: string }>('SELECT project_id FROM sprints WHERE id = ?', p.sprintId);
     if (!s || s.project_id !== projectId) throw badRequest('That sprint belongs to another project');
@@ -66,7 +68,8 @@ const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON
 /**
  * Records a change in the task history. Consecutive changes of the same field by the
  * same person within a few minutes are merged ("Todo → In Progress → Done" becomes
- * "Todo → Done"), and changes that cancel out disappear entirely.
+ * "Todo → Done"), and changes that cancel out disappear entirely (a file attached and
+ * removed again leaves no trace).
  */
 export function recordActivity(ctx: Ctx, taskId: string, actorId: string, kind: ActivityKind, data: Activity['data'] = {}) {
   const { db } = ctx;
@@ -81,6 +84,16 @@ export function recordActivity(ctx: Ctx, taskId: string, actorId: string, kind: 
       for (const l of data.added ?? []) removed.has(l) ? removed.delete(l) : added.add(l);
       for (const l of data.removed ?? []) added.has(l) ? added.delete(l) : removed.add(l);
       merged = added.size || removed.size ? { added: [...added], removed: [...removed] } : null;
+    } else if (kind === 'attachments') {
+      // File names, not ids: two files may share a name, and removing one cancels one upload.
+      const added = [...(prev.added ?? []), ...(data.added ?? [])];
+      const removed = [...(prev.removed ?? [])];
+      for (const f of data.removed ?? []) {
+        const i = added.indexOf(f);
+        if (i >= 0) added.splice(i, 1);
+        else removed.push(f);
+      }
+      merged = added.length || removed.length ? { added, removed } : null;
     } else if (kind === 'title' || kind === 'description') {
       merged = { ...data, from: prev.from };
     } else {
@@ -137,9 +150,9 @@ export function createTask(ctx: Ctx, user: User, raw: unknown, origin = ''): Tas
     const number = project.next_number;
     db.run('UPDATE projects SET next_number = next_number + 1 WHERE id = ?', projectId);
     db.run(
-      `INSERT INTO tasks (id, project_id, number, title, description, status_id, priority, assignee_id, creator_id, sprint_id,
-        estimate, due_date, position, created_at, updated_at, started_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (id, project_id, number, title, description, status_id, priority, assignee_id, reviewer_id, creator_id,
+        sprint_id, estimate, due_date, position, created_at, updated_at, started_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       taskId,
       projectId,
       number,
@@ -148,6 +161,7 @@ export function createTask(ctx: Ctx, user: User, raw: unknown, origin = ''): Tas
       statusId,
       p.priority ?? 0,
       p.assigneeId ?? null,
+      p.reviewerId ?? null,
       user.id,
       p.sprintId ?? null,
       p.estimate ?? null,
@@ -163,6 +177,7 @@ export function createTask(ctx: Ctx, user: User, raw: unknown, origin = ''): Tas
 
     const task = loadTask(db, taskId)!;
     if (task.assigneeId) notify(ctx, [task.assigneeId], { task, actorId: user.id, kind: 'assigned' });
+    if (task.reviewerId) notify(ctx, [task.reviewerId], { task, actorId: user.id, kind: 'review' });
     const mentioned = usersByHandles(db, extractMentions(task.description));
     if (mentioned.length) notify(ctx, mentioned, { task, actorId: user.id, kind: 'mention', excerpt: task.description });
     hub.broadcast({ type: 'task.upsert', data: task }, origin);
@@ -219,6 +234,11 @@ export function updateTask(ctx: Ctx, user: User, taskId: string, p: TaskPatch, o
       recordActivity(ctx, taskId, user.id, 'assignee', { from: before.assigneeId, to: p.assigneeId });
       meaningful = true;
     }
+    if (changed('reviewerId', p.reviewerId)) {
+      set('reviewer_id', p.reviewerId);
+      recordActivity(ctx, taskId, user.id, 'reviewer', { from: before.reviewerId, to: p.reviewerId });
+      meaningful = true;
+    }
     if (changed('sprintId', p.sprintId)) {
       set('sprint_id', p.sprintId);
       recordActivity(ctx, taskId, user.id, 'sprint', { from: before.sprintId, to: p.sprintId });
@@ -257,8 +277,11 @@ export function updateTask(ctx: Ctx, user: User, taskId: string, p: TaskPatch, o
     if (task.assigneeId && task.assigneeId !== before.assigneeId) {
       notify(ctx, [task.assigneeId], { task, actorId: user.id, kind: 'assigned' });
     }
+    if (task.reviewerId && task.reviewerId !== before.reviewerId) {
+      notify(ctx, [task.reviewerId], { task, actorId: user.id, kind: 'review' });
+    }
     if (statusChanged) {
-      notify(ctx, [task.creatorId, task.assigneeId].filter((x): x is string => !!x), {
+      notify(ctx, [task.creatorId, task.assigneeId, task.reviewerId].filter((x): x is string => !!x), {
         task,
         actorId: user.id,
         kind: 'status',

@@ -116,6 +116,7 @@ location / {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_buffering off;        # Server-Sent Events
     proxy_read_timeout 1h;
+    client_max_body_size 25m;   # attachments, match MAX_UPLOAD_MB
 }
 ```
 
@@ -141,10 +142,12 @@ To make a nightly backup and keep the last two weeks, create `/etc/cron.d/tackle
 15 3 * * * tackle DATA_DIR=/var/lib/tackle /usr/local/bin/node /opt/tackle/dist/server.mjs backup && find /var/lib/tackle/backups -name 'tackle-*.db' -mtime +14 -delete
 ```
 
+Files attached to tasks are not in the database: they live in `/var/lib/tackle/attachments`, one file per attachment. A file never changes after it is uploaded, so keeping a copy up to date is a matter of `rsync -a /var/lib/tackle/attachments/ /mnt/usb/tackle-attachments/` (add it to the cron line above).
+
 Copy backups off the Pi as well (another machine, a USB drive, or cloud storage), since SD cards do fail. To restore:
 
 1. `sudo systemctl stop tackle`
-2. Copy the backup over `tackle.db`.
+2. Copy the backup over `tackle.db`, and the attachments copy back into `attachments/`.
 3. Delete `tackle.db-wal` and `tackle.db-shm` if present.
 4. `sudo systemctl start tackle`
 

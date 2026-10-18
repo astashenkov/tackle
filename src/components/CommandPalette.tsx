@@ -12,6 +12,7 @@ import {
   List,
   Monitor,
   Moon,
+  Paperclip,
   Plus,
   Settings,
   SignalHigh,
@@ -21,6 +22,7 @@ import {
   Trash2,
   User as UserIcon,
   UserCheck,
+  Eye,
 } from 'lucide-preact';
 import type { Task } from '../../shared/types';
 import { keyLabel } from '../lib/hotkeys';
@@ -31,7 +33,8 @@ import { paletteOpen, shortcutsOpen, targetIds, theme } from '../store/ui';
 import { StatusIcon } from './Icons';
 import { openPopover } from './Popover';
 import { PickerList, matchScore, type PickerItem } from './Picker';
-import { pickAssignee, pickDueDate, pickEstimate, pickLabels, pickPriority, pickSprint, pickStatus, toggleAssignMe } from './pickers';
+import { pickAssignee, pickDueDate, pickEstimate, pickLabels, pickPriority, pickReviewer, pickSprint, pickStatus, toggleAssignMe } from './pickers';
+import { attachFiles } from './Attachments';
 import { branchName, confirmDelete, copyText, openTaskPanel, taskUrl } from './TaskPanel';
 import { openCreateTask } from './CreateTask';
 import { openProjectDialog, openSprintDialog } from './Dialogs';
@@ -89,11 +92,13 @@ function buildCommands(): Command[] {
     add(sec, 'priority', t('palette.changePriority'), <SignalHigh size={14} />, () => pickPriority(null, ids), kbd('p'), 'priority');
     add(sec, 'assignee', t('palette.assign'), <UserIcon size={14} />, () => pickAssignee(null, ids), kbd('a'), 'assignee');
     add(sec, 'me', t('palette.assignMe'), <UserCheck size={14} />, () => toggleAssignMe(ids), kbd('i'));
+    add(sec, 'reviewer', t('palette.reviewer'), <Eye size={14} />, () => pickReviewer(null, ids), kbd('r'), 'review reviewer');
     add(sec, 'labels', t('palette.labels'), <Tag size={14} />, () => pickLabels(null, ids), kbd('l'), 'labels tags');
     add(sec, 'estimate', t('palette.estimate'), <Hash size={14} />, () => pickEstimate(null, ids), kbd('e'), 'points');
     add(sec, 'due', t('palette.due'), <CalendarClock size={14} />, () => pickDueDate(null, ids), kbd('d'), 'deadline');
     add(sec, 'sprint', t('palette.sprint'), <Timer size={14} />, () => pickSprint(null, ids), kbd('shift+s'), 'cycle');
     if (one) {
+      add(sec, 'attach', t('palette.attach'), <Paperclip size={14} />, () => attachFiles(one.id), undefined, 'attachment upload file');
       add(sec, 'link', t('task.copyLink'), <Link2 size={14} />, () => copyText(taskUrl(one), t('toast.linkCopied')));
       add(sec, 'branch', t('task.copyBranch'), <GitBranch size={14} />, () => copyText(branchName(one), t('toast.branchCopied')), undefined, 'git');
     }

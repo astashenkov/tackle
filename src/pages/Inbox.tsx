@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { AtSign, CheckCheck, CircleDot, MessageSquare, UserPlus, Mail, MailOpen, Inbox as InboxIcon } from 'lucide-preact';
+import { AtSign, CheckCheck, CircleDot, Eye, MessageSquare, UserPlus, Mail, MailOpen, Inbox as InboxIcon } from 'lucide-preact';
 import type { Notification } from '../../shared/types';
 import { relativeTime } from '../lib/date';
 import { t, tx } from '../lib/i18n';
@@ -14,6 +14,7 @@ import { useHotkeys } from '../lib/hotkeys';
 
 const KIND_ICON = {
   assigned: <UserPlus size={12} />,
+  review: <Eye size={12} />,
   comment: <MessageSquare size={12} />,
   mention: <AtSign size={12} />,
   status: <CircleDot size={12} />,
