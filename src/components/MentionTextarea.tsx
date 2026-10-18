@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
+import { pastedFiles } from '../lib/files';
 import { userList } from '../store/data';
-import { pastedFiles } from './Attachments';
 import { Avatar } from './Avatar';
 import { matchScore } from './Picker';
 

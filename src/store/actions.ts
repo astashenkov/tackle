@@ -166,11 +166,6 @@ async function restoreTasks(removed: Task[]) {
 
 /* -------------------------------- attachments -------------------------------- */
 
-export const attachmentUrl = (id: ID) => `/api/attachments/${id}`;
-
-/** Types shown as a picture (in tiles and as Markdown images). */
-export const isImage = (type: string) => /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)$/.test(type);
-
 /**
  * Starts uploading files to a task. Ids are chosen here and returned right away, so a description
  * or comment can link to a file before its upload has finished. Files over the limit are skipped.

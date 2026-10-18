@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import type { Activity, Attachment, Notification, Snapshot, Sprint, Task } from '../../shared/types';
 import { createApp } from '../../server/app';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { hashPassword } from '../../server/auth';
 import { backupDatabase } from '../../server/backup';
-import { DB } from '../../server/db';
+import { DB, MIGRATIONS } from '../../server/db';
 
 type App = ReturnType<typeof createApp>['app'];
 
@@ -529,5 +531,44 @@ describe('attachments', () => {
     assert.equal((await admin.del(`/projects/${snap.projects[0].id}`)).status, 200);
     assert.ok(!fs.existsSync(path.join(filesDir, a.id)));
     assert.equal((await admin.get<Snapshot>('/sync')).data.attachments.length, 0);
+  });
+});
+
+describe('upgrade', () => {
+  test('a database left by v0.1 is upgraded in place and keeps its data', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tackle-upgrade-'));
+    const file = path.join(dir, 'tackle.db');
+    // The database as Tackle v0.1 left it: schema version 1 with some work in it.
+    const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
+    const old = new DatabaseSync(file);
+    old.exec(MIGRATIONS[0]);
+    old.exec('PRAGMA user_version = 1');
+    const t = Date.now();
+    old
+      .prepare("INSERT INTO users (id, email, name, handle, password_hash, role, color, created_at) VALUES ('userAlex0001', 'alex@example.com', 'Alex', 'alex', ?, 'admin', '#8b5cf6', ?)")
+      .run(await hashPassword('password123'), t);
+    old.exec(`
+      INSERT INTO statuses (id, name, category, color, position) VALUES ('statusTodo01', 'Todo', 'unstarted', '#94a3b8', 1);
+      INSERT INTO projects (id, key, name, color, next_number, position, created_at) VALUES ('projectWeb01', 'WEB', 'Web', '#6366f1', 2, 1, ${t});
+      INSERT INTO tasks (id, project_id, number, title, status_id, assignee_id, creator_id, position, created_at, updated_at)
+        VALUES ('taskOld00001', 'projectWeb01', 1, 'Made in v0.1', 'statusTodo01', 'userAlex0001', 'userAlex0001', 0, ${t}, ${t});
+      INSERT INTO comments (id, task_id, author_id, body, created_at, updated_at) VALUES ('commentOld01', 'taskOld00001', 'userAlex0001', 'Still here?', ${t}, ${t});
+    `);
+    old.close();
+
+    const db = new DB(file);
+    assert.equal(db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, MIGRATIONS.length);
+    const c = new Client(createApp({ db, attachmentsDir: path.join(dir, 'attachments') }).app);
+    assert.equal((await c.post('/login', { email: 'alex@example.com', password: 'password123' })).status, 200);
+    const s = (await c.get<Snapshot>('/sync')).data;
+    assert.deepEqual(s.tasks.map((x) => [x.title, x.assigneeId, x.reviewerId]), [['Made in v0.1', 'userAlex0001', null]]);
+    assert.deepEqual(s.attachments, []);
+    assert.equal((await c.get('/tasks/taskOld00001/timeline')).data.comments[0].body, 'Still here?');
+
+    // The new features work on tasks from before the upgrade.
+    assert.equal((await c.patch<Task>('/tasks/taskOld00001', { reviewerId: 'userAlex0001' })).data.reviewerId, 'userAlex0001');
+    assert.equal((await c.upload('taskOld00001', 'log')).status, 201);
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

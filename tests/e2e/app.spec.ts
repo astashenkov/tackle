@@ -10,6 +10,37 @@ async function login(page: Page, email = 'alex@tackle.dev') {
 
 const column = (page: Page, name: string) => page.locator('.column', { has: page.locator('.column-title', { hasText: name }) });
 
+/** A 1×1 PNG. */
+const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+type FakeFile = { name: string; type: string; base64: string };
+
+/** Fires the paste the browser would fire for ⌘V, with files (and optionally text) on the clipboard. */
+async function paste(page: Page, selector: string, files: FakeFile[], text?: Record<string, string>) {
+  await page.evaluate(
+    ({ selector, files, text }) => {
+      const data = new DataTransfer();
+      for (const f of files) data.items.add(new File([Uint8Array.from(atob(f.base64), (ch) => ch.charCodeAt(0))], f.name, { type: f.type }));
+      for (const [type, value] of Object.entries(text ?? {})) data.setData(type, value);
+      document.querySelector(selector)!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    },
+    { selector, files, text },
+  );
+}
+
+/** Drags files from the desktop over an element and drops them there. */
+async function dropFiles(page: Page, selector: string, files: FakeFile[], { drop = true } = {}) {
+  await page.evaluate(
+    ({ selector, files, drop }) => {
+      const data = new DataTransfer();
+      for (const f of files) data.items.add(new File([Uint8Array.from(atob(f.base64), (ch) => ch.charCodeAt(0))], f.name, { type: f.type }));
+      const target = document.querySelector(selector)!;
+      const types = drop ? ['dragenter', 'dragover', 'drop'] : ['dragenter', 'dragover'];
+      for (const type of types) target.dispatchEvent(new DragEvent(type, { dataTransfer: data, bubbles: true, cancelable: true }));
+    },
+    { selector, files, drop },
+  );
+}
+
 async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -173,4 +204,72 @@ test('ask a teammate for review and attach files', async ({ page, browser }) => 
   await page.locator('.modal button.danger').click();
   await expect(tile).toHaveCount(0);
   await expect(page.locator('.panel .attach-empty')).toBeVisible();
+});
+
+test('paste and drop files, refuse big ones, use the command menu', async ({ page }) => {
+  await login(page);
+  await page.goto('/p/WEB/list?task=WEB-21');
+  await expect(page.locator('.panel .panel-title')).toHaveValue('Session expires too early on Safari');
+  const files = page.locator('.panel .attachment');
+
+  // A screenshot pasted into a comment is attached to the task and shown in the comment.
+  await page.locator('.composer textarea').click();
+  await paste(page, '.composer textarea', [{ name: 'image.png', type: 'image/png', base64: PIXEL }]);
+  await expect(page.locator('.composer textarea')).toHaveValue(/^!\[image\.png\]\(\/api\/attachments\/[\w-]+\)$/);
+  await page.keyboard.type('\nRepro on Safari 18');
+  await page.keyboard.press('Control+Enter');
+  const shown = page.locator('.comment', { hasText: 'Repro on Safari 18' }).locator('.markdown img');
+  await expect(shown).toBeVisible();
+  await expect.poll(() => shown.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+  await expect(files.filter({ hasText: 'image.png' })).toHaveCount(1);
+
+  // Into the description: a link for a document.
+  await page.locator('.panel .description').click();
+  await expect(page.locator('.panel .description textarea')).toBeFocused();
+  await paste(page, '.panel .description textarea', [{ name: 'har.json', type: 'application/json', base64: btoa('{}') }]);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.panel .description a', { hasText: 'har.json' })).toHaveAttribute('href', /^\/api\/attachments\//);
+
+  // With no text field focused, a pasted file is simply attached.
+  await page.locator('.panel-meta').click();
+  await paste(page, 'body', [{ name: 'console.log', type: 'text/plain', base64: btoa('TypeError') }]);
+  await expect(files.filter({ hasText: 'console.log' })).toHaveCount(1);
+
+  // Cells copied from a spreadsheet bring a picture along; that paste stays text.
+  await paste(page, 'body', [{ name: 'cells.png', type: 'image/png', base64: PIXEL }], { 'text/plain': 'a\tb', 'text/html': '<table></table>' });
+
+  // Dropping files on the panel attaches them; an overlay shows while they are dragged over it.
+  await dropFiles(page, '.panel .props-grid', [{ name: 'trace.zip', type: 'application/zip', base64: btoa('PK') }], { drop: false });
+  await expect(page.locator('.drop-overlay')).toContainText('WEB-21');
+  await dropFiles(page, '.panel .props-grid', [{ name: 'trace.zip', type: 'application/zip', base64: btoa('PK') }]);
+  await expect(page.locator('.drop-overlay')).toHaveCount(0);
+  await expect(files.filter({ hasText: 'trace.zip' })).toHaveCount(1);
+  await expect(files).toHaveCount(4);
+  await expect(files.filter({ hasText: 'cells.png' })).toHaveCount(0);
+
+  // Files over the limit (1 MB on the test server) are refused before they are sent.
+  const sent: string[] = [];
+  page.on('request', (req) => req.method() === 'POST' && req.url().includes('/attachments') && sent.push(req.url()));
+  const chooser = page.waitForEvent('filechooser');
+  await page.keyboard.press('Control+k');
+  await page.keyboard.type('attach');
+  await page.keyboard.press('Enter');
+  await (await chooser).setFiles({ name: 'screen-recording.mov', mimeType: 'video/quicktime', buffer: Buffer.alloc(1024 * 1024 + 1) });
+  await expect(page.locator('.toast', { hasText: 'screen-recording.mov is too large' })).toBeVisible();
+  await expect(files).toHaveCount(4);
+  expect(sent).toEqual([]);
+
+  // The command menu sets the reviewer too.
+  await page.keyboard.press('Control+k');
+  await page.keyboard.type('reviewer');
+  await page.keyboard.press('Enter');
+  await page.locator('.picker-input').fill('sofia');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.panel [data-prop=reviewer]')).toContainText('Sofia Chen');
+
+  // Everything survives a reload.
+  await page.reload();
+  await expect(files).toHaveCount(4);
+  await expect(page.locator('.panel [data-prop=reviewer]')).toContainText('Sofia Chen');
+  await expect(page.locator('.card, .row', { hasText: 'Session expires too early on Safari' }).locator('.chip.static', { hasText: '4' })).toBeVisible();
 });

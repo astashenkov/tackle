@@ -1,9 +1,10 @@
 import { Download, File, Paperclip, Plus, Trash2 } from 'lucide-preact';
 import type { Attachment, ID, Task } from '../../shared/types';
 import { formatDateTime, relativeTime } from '../lib/date';
+import { attachmentMarkdown, attachmentUrl, isImage, opensInBrowser } from '../lib/files';
 import { formatSize, t } from '../lib/i18n';
 import { attachmentsByTask, me, uploads, users } from '../store/data';
-import { attachmentUrl, deleteAttachment, isImage, uploadFiles } from '../store/actions';
+import { deleteAttachment, uploadFiles } from '../store/actions';
 import { confirm } from './Modal';
 
 /** Lets the user pick files on their device and attaches them to a task. */
@@ -21,27 +22,8 @@ export function attachFiles(taskId: ID) {
   input.click();
 }
 
-/**
- * Files from a paste. Copying from Excel or Word puts a picture of the selection next to the
- * text and HTML; such a paste is text. (A file copied in Finder comes with just its name as text.)
- */
-export function pastedFiles(data: DataTransfer | null): File[] {
-  if (!data?.files.length || (data.getData('text/plain') && data.types.includes('text/html'))) return [];
-  return [...data.files];
-}
-
-/** Uploads files to a task and returns Markdown that shows (images) or links them, one per line. */
-export function attachAndLink(taskId: ID, files: File[]): string {
-  return uploadFiles(taskId, files)
-    .map((f) => {
-      const label = f.name.replace(/[[\]]/g, '');
-      return `${isImage(f.type) ? '!' : ''}[${label}](${attachmentUrl(f.id)})`;
-    })
-    .join('\n');
-}
-
-/** Types the browser shows itself when opened; everything else is downloaded (mirrors the server). */
-const opensInBrowser = (type: string) => /^(image\/(png|jpeg|gif|webp|avif|bmp)$|video\/|audio\/|text\/|application\/(pdf|json)$)/.test(type);
+/** Uploads files to a task and returns Markdown that shows (pictures) or links them, one per line. */
+export const attachAndLink = (taskId: ID, files: File[]): string => attachmentMarkdown(uploadFiles(taskId, files));
 
 /** A file glyph with the extension under it ("PDF", "ZIP"): enough to tell files apart at a glance. */
 function FileIcon({ name }: { name: string }) {

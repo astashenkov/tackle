@@ -25,7 +25,7 @@ process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
 }) as typeof process.emitWarning;
 const { DatabaseSync: Database } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
 
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: string[] = [
   /* 1: initial schema */ `
   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
