@@ -344,7 +344,7 @@ export function workspaceRoutes(api: Hono<AppEnv>, ctx: Ctx) {
   api.get('/notifications', (c) => {
     const rows = db.all(
       `SELECT n.* FROM notifications n JOIN tasks t ON t.id = n.task_id
-       WHERE n.user_id = ? AND t.deleted_at IS NULL ORDER BY n.created_at DESC LIMIT 200`,
+       WHERE n.user_id = ? AND t.deleted_at IS NULL ORDER BY n.created_at DESC, n.id DESC LIMIT 200`,
       c.get('user').id,
     );
     return c.json(rows.map(toNotification));
