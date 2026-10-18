@@ -124,6 +124,8 @@ test('edit the description with markdown checklists', async ({ page }) => {
   await page.goto('/p/WEB/list?task=WEB-20');
   await expect(page.locator('.panel .panel-title')).toHaveValue('Export reports to CSV');
   await page.locator('.panel .description').click();
+  // The editor takes focus right after it mounts; typing earlier would trigger shortcuts.
+  await expect(page.locator('.panel .description textarea')).toBeFocused();
   await page.keyboard.type('Steps:\n\n- [ ] Pick columns\n- [ ] Add download button');
   await page.keyboard.press('Escape');
   const boxes = page.locator('.panel .description input[type=checkbox]');
