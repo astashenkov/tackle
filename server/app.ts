@@ -5,10 +5,13 @@ import { compress } from 'hono/compress';
 import { streamSSE } from 'hono/streaming';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { requireUser, type AppEnv } from './auth';
+import { config } from './config';
 import type { DB } from './db';
 import { EventHub } from './events';
+import { FileStore } from './files';
 import type { Ctx } from './notify';
 import { HttpError } from './util';
+import { attachmentRoutes } from './api/attachments';
 import { authRoutes } from './api/auth';
 import { taskRoutes } from './api/tasks';
 import { sprintRoutes } from './api/sprints';
@@ -17,6 +20,10 @@ import { workspaceRoutes } from './api/workspace';
 export interface AppOptions {
   db: DB;
   publicDir?: string;
+  /** Where attached files are stored (defaults to the configured directory). */
+  attachmentsDir?: string;
+  /** Largest accepted upload in bytes (defaults to MAX_UPLOAD_MB). */
+  maxUploadBytes?: number;
 }
 
 const CSP = [
@@ -31,9 +38,10 @@ const CSP = [
   "form-action 'self'",
 ].join('; ');
 
-export function createApp({ db, publicDir }: AppOptions) {
+export function createApp({ db, publicDir, attachmentsDir, maxUploadBytes }: AppOptions) {
   const hub = new EventHub((send) => db.afterCommit(send));
-  const ctx: Ctx = { db, hub };
+  const files = new FileStore(attachmentsDir ?? config.attachmentsDir, maxUploadBytes ?? config.maxUploadMb * 1024 * 1024);
+  const ctx: Ctx = { db, hub, files };
   const app = new Hono();
 
   app.onError((err, c) => {
@@ -118,6 +126,7 @@ export function createApp({ db, publicDir }: AppOptions) {
   });
 
   taskRoutes(api, ctx);
+  attachmentRoutes(api, ctx);
   sprintRoutes(api, ctx);
   workspaceRoutes(api, ctx);
   app.route('/api', api);

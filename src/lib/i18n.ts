@@ -23,6 +23,7 @@ const en = {
   'common.edit': 'Edit',
   'common.more': 'More',
   'common.noAssignee': 'No assignee',
+  'common.noReviewer': 'No reviewer',
   'common.noDueDate': 'No due date',
   'common.noEstimate': 'No estimate',
   'common.noLabels': 'No labels',
@@ -55,11 +56,13 @@ const en = {
   'prop.status': 'Status',
   'prop.priority': 'Priority',
   'prop.assignee': 'Assignee',
+  'prop.reviewer': 'Reviewer',
   'prop.labels': 'Labels',
   'prop.estimate': 'Estimate',
   'prop.sprint': 'Sprint',
   'prop.dueDate': 'Due date',
   'prop.checklist': 'Checklist',
+  'prop.attachments': 'Attachments',
 
   'nav.inbox': 'Inbox',
   'nav.myTasks': 'My tasks',
@@ -128,6 +131,15 @@ const en = {
   'comment.edited': 'edited',
   'comment.deleteTitle': 'Delete this comment?',
 
+  'attach.add': 'Attach files',
+  'attach.drop': 'Drop files to attach them to {ref}',
+  'attach.download': 'Download',
+  'attach.delete': 'Delete file',
+  'attach.deleteTitle': 'Delete “{name}”?',
+  'attach.deleteText': 'The file will be deleted for everyone.',
+  'attach.tooLarge': '{name} is too large: files can be at most {limit}',
+  'attach.uploading': 'Uploading…',
+
   'activity.created': '{actor} created the task',
   'activity.title': '{actor} renamed the task to {to}',
   'activity.description': '{actor} updated the description',
@@ -137,6 +149,9 @@ const en = {
   'activity.assigned': '{actor} assigned the task to {to}',
   'activity.selfAssigned': '{actor} took the task',
   'activity.unassigned': '{actor} unassigned {from}',
+  'activity.reviewer': '{actor} asked {to} to review the task',
+  'activity.selfReviewer': '{actor} took the task for review',
+  'activity.reviewerRemoved': '{actor} removed {from} as reviewer',
   'activity.sprint': '{actor} moved the task to {to}',
   'activity.sprintRemoved': '{actor} removed the task from {from}',
   'activity.estimate': '{actor} estimated the task at {to}',
@@ -146,12 +161,16 @@ const en = {
   'activity.labelsAdded': '{actor} added {labels}',
   'activity.labelsRemoved': '{actor} removed {labels}',
   'activity.labelsRemovedAnd': ' and removed {labels}',
+  'activity.attached': '{actor} attached {files}',
+  'activity.attachmentsRemoved': '{actor} deleted {files}',
+  'activity.attachmentsRemovedAnd': ' and deleted {files}',
   'activity.deleted': '{actor} deleted the task',
   'activity.restored': '{actor} restored the task',
 
   'picker.status': 'Change status…',
   'picker.priority': 'Set priority…',
   'picker.assignee': 'Assign to…',
+  'picker.reviewer': 'Set reviewer…',
   'picker.labels': 'Labels…',
   'picker.estimate': 'Estimate…',
   'picker.sprint': 'Move to sprint…',
@@ -195,9 +214,11 @@ const en = {
   'empty.noMatches': 'No tasks match the current filters.',
   'empty.myTitle': 'Nothing assigned to you',
   'empty.createdTitle': 'You haven’t created any tasks yet',
-  'empty.myText': 'Tasks appear here as soon as they are assigned to or created by you.',
+  'empty.reviewTitle': 'Nothing to review',
+  'empty.myText': 'Tasks appear here as soon as they are assigned to you, sent to you for review or created by you.',
 
   'my.assigned': 'Assigned',
+  'my.review': 'To review',
   'my.created': 'Created',
 
   'inbox.all': 'All',
@@ -207,8 +228,9 @@ const en = {
   'inbox.markUnread': 'Mark as unread',
   'inbox.empty': 'Your inbox is empty',
   'inbox.emptyUnread': 'You’re all caught up',
-  'inbox.emptyText': 'You’ll be notified when someone assigns you a task, mentions you or comments on your tasks.',
+  'inbox.emptyText': 'You’ll be notified when someone assigns you a task or a review, mentions you or comments on your tasks.',
   'inbox.assigned': '{actor} assigned this to you',
+  'inbox.review': '{actor} asked you to review this',
   'inbox.comment': '{actor} commented',
   'inbox.mention': '{actor} mentioned you',
   'inbox.status': '{actor} moved this to {status}',
@@ -221,6 +243,8 @@ const en = {
   'palette.changePriority': 'Change priority…',
   'palette.assign': 'Assign to…',
   'palette.assignMe': 'Assign to me',
+  'palette.reviewer': 'Set reviewer…',
+  'palette.attach': 'Attach files…',
   'palette.labels': 'Change labels…',
   'palette.estimate': 'Set estimate…',
   'palette.due': 'Set due date…',
@@ -332,8 +356,8 @@ const en = {
   'settings.workflow': 'Workflow',
   'settings.workflowText': 'Statuses define the board columns. The category controls how a status counts in sprints and filters.',
   'settings.data': 'Data',
-  'settings.dataText': 'Your data lives in a single SQLite file on your server.',
-  'settings.backupText': 'To back up Tackle, copy the database file (data/tackle.db by default) or download a JSON export.',
+  'settings.dataText': 'Your data lives in a single SQLite file on your server, attached files in a folder next to it.',
+  'settings.backupText': 'To back up Tackle, copy the database file (data/tackle.db by default) and the attachments folder, or download a JSON export (it lists attached files but doesn’t include them).',
   'settings.export': 'Download JSON export',
   'settings.adminOnly': 'Only admins can export data.',
   'settings.name': 'Name',
@@ -454,6 +478,20 @@ export function tx(key: Key, nodes: Record<string, ComponentChildren>): Componen
 }
 
 export const priorityName = (p: Priority) => t(`priority.${p}` as Key);
+
+/** File size in the current language: "740 bytes", "2.4 MB". */
+export function formatSize(bytes: number): string {
+  const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte'] as const;
+  let value = bytes;
+  let i = 0;
+  for (; value >= 1024 && i < units.length - 1; i++) value /= 1024;
+  return new Intl.NumberFormat(lang.value, {
+    style: 'unit',
+    unit: units[i],
+    unitDisplay: i === 0 ? 'long' : 'short', // "740 byte" reads oddly
+    maximumFractionDigits: i > 0 && value < 10 ? 1 : 0,
+  }).format(value);
+}
 
 /** "Oct 9 – Oct 22" */
 export function sprintLabel(s: Pick<Sprint, 'startDate' | 'endDate'>): string {

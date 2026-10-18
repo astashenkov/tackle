@@ -4,6 +4,7 @@ import { api, clientId } from '../lib/api';
 import { isPending, loadNotifications } from './actions';
 import {
   applySnapshot,
+  attachments,
   connection,
   drop,
   labels,
@@ -39,6 +40,12 @@ function handle(event: ServerEvent & { origin: string }) {
       break;
     case 'task.delete':
       drop(tasks, event.data.id);
+      break;
+    case 'attachment.upsert':
+      put(attachments, event.data);
+      break;
+    case 'attachment.delete':
+      drop(attachments, event.data.id);
       break;
     case 'project.upsert':
       put(projects, event.data);

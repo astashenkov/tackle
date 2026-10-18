@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite';
 import type {
   Activity,
+  Attachment,
   Comment,
   Label,
   Notification,
@@ -164,6 +165,22 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX notifications_user ON notifications(user_id, read_at);
   `,
+  /* 2: task reviewer */ `
+  ALTER TABLE tasks ADD COLUMN reviewer_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+  CREATE INDEX tasks_reviewer ON tasks(reviewer_id);
+  `,
+  /* 3: attachments (the files live in a directory next to the database) */ `
+  CREATE TABLE attachments (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX attachments_task ON attachments(task_id);
+  `,
 ];
 
 export type Row = Record<string, SQLInputValue>;
@@ -319,6 +336,7 @@ export const toTask = (r: R, labelIds: string[]): Task => ({
   statusId: r.status_id,
   priority: r.priority,
   assigneeId: r.assignee_id ?? null,
+  reviewerId: r.reviewer_id ?? null,
   creatorId: r.creator_id ?? null,
   sprintId: r.sprint_id ?? null,
   estimate: r.estimate ?? null,
@@ -329,6 +347,16 @@ export const toTask = (r: R, labelIds: string[]): Task => ({
   updatedAt: r.updated_at,
   startedAt: r.started_at ?? null,
   completedAt: r.completed_at ?? null,
+});
+
+export const toAttachment = (r: R): Attachment => ({
+  id: r.id,
+  taskId: r.task_id,
+  uploaderId: r.uploader_id ?? null,
+  name: r.name,
+  type: r.type,
+  size: r.size,
+  createdAt: r.created_at,
 });
 
 export const toComment = (r: R): Comment => ({

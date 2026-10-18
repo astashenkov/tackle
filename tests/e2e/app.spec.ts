@@ -134,3 +134,41 @@ test('edit the description with markdown checklists', async ({ page }) => {
   await expect(page.locator('.panel .description li.done')).toHaveText('Pick columns');
   await expect(page.locator('.row', { hasText: 'Export reports to CSV' }).locator('.chip.static', { hasText: '/' })).toHaveText('1/2');
 });
+
+test('ask a teammate for review and attach files', async ({ page, browser }) => {
+  await login(page);
+  await page.goto('/p/WEB/board?task=WEB-12');
+  await expect(page.locator('.panel .panel-title')).toHaveValue('Keyboard shortcuts for common actions');
+
+  await page.keyboard.press('r');
+  await page.locator('.picker-input').fill('ivan');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.panel [data-prop=reviewer]')).toContainText('Ivan Sokolov');
+  await expect(page.locator('.timeline .activity', { hasText: 'to review' }).last()).toContainText('asked Ivan Sokolov to review');
+
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('.panel-header button[title="Attach files"]').click();
+  await (await chooser).setFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Ship it') });
+  const tile = page.locator('.panel .attachment', { hasText: 'notes.txt' });
+  await expect(tile).toContainText('7 bytes');
+  await expect(page.locator('.card', { hasText: 'Keyboard shortcuts for common actions' }).locator('.chip.static')).toHaveText('1');
+  const href = await tile.locator('a.attachment-name').getAttribute('href');
+  expect(await (await page.request.get(href!)).text()).toBe('Ship it');
+
+  // The reviewer finds the request in the inbox and under My tasks → To review.
+  const ivanCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ivan = await ivanCtx.newPage();
+  await login(ivan, 'ivan@tackle.dev');
+  await ivan.goto('/inbox');
+  await expect(ivan.locator('.inbox-item', { hasText: 'Keyboard shortcuts for common actions' }).first()).toContainText('asked you to review');
+  await ivan.goto('/my');
+  await ivan.locator('.tab', { hasText: 'To review' }).click();
+  await expect(ivan.locator('.row', { hasText: 'Keyboard shortcuts for common actions' })).toBeVisible();
+  await ivanCtx.close();
+
+  await tile.hover();
+  await tile.locator('button[title="Delete file"]').click();
+  await page.locator('.modal button.danger').click();
+  await expect(tile).toHaveCount(0);
+  await expect(page.locator('.panel .attach-empty')).toBeVisible();
+});

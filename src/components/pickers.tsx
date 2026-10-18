@@ -55,27 +55,33 @@ export function pickPriority(anchor: Anchor, ids: ID[], onPick?: (p: Priority) =
   });
 }
 
-export function pickAssignee(anchor: Anchor, ids: ID[], onPick?: (userId: ID | null) => void, value?: ID | null) {
+function pickPerson(field: 'assigneeId' | 'reviewerId', anchor: Anchor, ids: ID[], onPick?: (userId: ID | null) => void, value?: ID | null) {
   const items = list(ids);
-  const current = value !== undefined ? value : common(items, 'assigneeId');
+  const current = value !== undefined ? value : common(items, field);
   const mine = me.value;
   openPicker(anchor, {
-    placeholder: t('picker.assignee'),
+    placeholder: field === 'assigneeId' ? t('picker.assignee') : t('picker.reviewer'),
     selected: current === undefined ? [] : [current ?? 'none'],
     items: [
-      { id: 'none', label: t('common.noAssignee'), icon: <UserMinus size={14} /> },
+      { id: 'none', label: field === 'assigneeId' ? t('common.noAssignee') : t('common.noReviewer'), icon: <UserMinus size={14} /> },
       ...(mine ? [{ id: mine.id, label: `${mine.name} (${t('common.you')})`, icon: <Avatar user={mine} size={16} />, keywords: `${mine.handle} me` }] : []),
       ...userList.value
         .filter((u) => u.id !== mine?.id)
         .map((u) => ({ id: u.id, label: u.name, icon: <Avatar user={u} size={16} />, keywords: u.handle, hint: `@${u.handle}` })),
     ],
     onSelect: (id) => {
-      const assigneeId = id === 'none' ? null : id;
-      if (onPick) onPick(assigneeId);
-      else updateTasks(ids, { assigneeId });
+      const userId = id === 'none' ? null : id;
+      if (onPick) onPick(userId);
+      else updateTasks(ids, { [field]: userId });
     },
   });
 }
+
+export const pickAssignee = (anchor: Anchor, ids: ID[], onPick?: (userId: ID | null) => void, value?: ID | null) =>
+  pickPerson('assigneeId', anchor, ids, onPick, value);
+
+export const pickReviewer = (anchor: Anchor, ids: ID[], onPick?: (userId: ID | null) => void, value?: ID | null) =>
+  pickPerson('reviewerId', anchor, ids, onPick, value);
 
 export function pickLabels(anchor: Anchor, ids: ID[], onToggle?: (labelId: ID, on: boolean) => void, initial?: ID[]) {
   const items = list(ids);

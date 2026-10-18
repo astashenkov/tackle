@@ -31,6 +31,7 @@ Public breakdowns of Linear's architecture consistently point at the same things
 - **Notification hygiene**: you are never notified about your own actions; repeated unread status changes on one task collapse into one inbox item; mentioned people get a *mention* instead of a duplicate *comment* notification.
 - **Recently completed**: closed tasks older than 14 days are hidden from boards and lists by default ("Completed: Recent" in Display), so the Done column doesn't grow forever.
 - **Sprint completion** freezes the sprint's stats and moves unfinished work in one transaction.
+- **Attachments** are files on disk next to the database, named by a random id and served only to signed-in users. Uploads stream to disk under a size limit. Only types browsers show without running code (pictures, video, audio, PDF, text as plain text) open inline; everything else, SVG and HTML included, is downloaded, and responses carry a sandboxing CSP, so an uploaded page can't act as Tackle. Clients pick the attachment id, which lets a pasted screenshot be linked from a description before its upload has finished.
 - **Security**: scrypt password hashes, only token hashes stored for sessions, `HttpOnly` + `SameSite=Lax` cookies, a `Sec-Fetch-Site`/Origin check on writes that survives reverse proxies, a strict CSP, rate-limited sign-in, and a Markdown renderer that escapes everything and emits a fixed set of tags.
 - **Accessibility & theming**: system/light/dark themes from one set of CSS tokens, focus trapping in dialogs, reduced-motion support, a screen-reader table behind the burndown chart. Chart colors were checked with a palette validator for contrast and color-vision deficiency separation.
 
@@ -42,11 +43,13 @@ users ─┬─ sessions
 projects ─┬─ sprints
           └─ tasks ─┬─ task_labels ── labels
                     ├─ comments
+                    ├─ attachments (files in a directory next to the database)
                     ├─ activity
                     └─ notifications ── users
+tasks.assignee_id, tasks.reviewer_id ── users
 statuses (workspace-wide, with a category)
 ```
 
 ## Not in v1 (on purpose, for now)
 
-File attachments, email notifications, sub-issues (Markdown checklists cover most cases), custom fields, time tracking, GitHub/GitLab integration, webhooks, multiple workspaces per server. Each of these is a reasonable follow-up once a team asks for it.
+Email notifications, sub-issues (Markdown checklists cover most cases), custom fields, time tracking, GitHub/GitLab integration, webhooks, multiple workspaces per server. Each of these is a reasonable follow-up once a team asks for it.

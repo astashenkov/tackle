@@ -5,6 +5,7 @@ import { hashPassword, requireAdmin, verifyPassword, type AppEnv } from '../auth
 import {
   loadAllTasks,
   loadTask,
+  toAttachment,
   toComment,
   toLabel,
   toNotification,
@@ -35,7 +36,7 @@ export function workspaceInfo(ctx: Ctx): Workspace {
 }
 
 export function workspaceRoutes(api: Hono<AppEnv>, ctx: Ctx) {
-  const { db, hub } = ctx;
+  const { db, hub, files } = ctx;
 
   /* ------------------------------ sync ------------------------------ */
 
@@ -50,8 +51,10 @@ export function workspaceRoutes(api: Hono<AppEnv>, ctx: Ctx) {
       labels: db.all('SELECT * FROM labels ORDER BY name COLLATE NOCASE').map(toLabel),
       sprints: db.all('SELECT * FROM sprints ORDER BY start_date, number').map(toSprint),
       tasks: loadAllTasks(db),
+      attachments: db.all('SELECT * FROM attachments ORDER BY created_at').map(toAttachment),
       unread: db.get<{ n: number }>('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', me.id)!.n,
       serverTime: now(),
+      uploadLimit: files.maxBytes,
     };
     return c.json(snapshot);
   });
@@ -78,6 +81,8 @@ export function workspaceRoutes(api: Hono<AppEnv>, ctx: Ctx) {
       sprints: db.all('SELECT * FROM sprints').map(toSprint),
       tasks: loadAllTasks(db),
       comments: db.all('SELECT * FROM comments').map(toComment),
+      // Only the list: the files themselves stay in the attachments directory.
+      attachments: db.all('SELECT * FROM attachments').map(toAttachment),
     };
     c.header('Content-Disposition', `attachment; filename="tackle-export-${dump.exportedAt.slice(0, 10)}.json"`);
     return c.json(dump);
@@ -134,10 +139,12 @@ export function workspaceRoutes(api: Hono<AppEnv>, ctx: Ctx) {
   api.delete('/projects/:id', (c) => {
     requireAdmin(c);
     const project = loadProject(c.req.param('id'));
+    const attached = db.all<{ id: string }>('SELECT a.id FROM attachments a JOIN tasks t ON t.id = a.task_id WHERE t.project_id = ?', project.id);
     db.tx(() => {
       db.run('DELETE FROM tasks WHERE project_id = ?', project.id);
       db.run('DELETE FROM projects WHERE id = ?', project.id);
     });
+    for (const a of attached) files.remove(a.id);
     hub.broadcast({ type: 'resync', data: {} });
     return c.json({ ok: true });
   });

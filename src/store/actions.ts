@@ -1,10 +1,11 @@
 import { batch } from '@preact/signals';
 import { CLOSED_CATEGORIES } from '../../shared/constants';
-import type { ID, Label, Notification, Project, Sprint, Status, Task, TaskPatch, User } from '../../shared/types';
+import type { Attachment, ID, Label, Notification, Project, Sprint, Status, Task, TaskPatch, User } from '../../shared/types';
 import { api, ApiError, newId } from '../lib/api';
-import { t } from '../lib/i18n';
+import { formatSize, t } from '../lib/i18n';
 import { toast } from '../components/Toasts';
 import {
+  attachments,
   drop,
   labels,
   me,
@@ -16,6 +17,8 @@ import {
   sprints,
   statuses,
   tasks,
+  uploadLimit,
+  uploads,
   users,
   workspace,
 } from './data';
@@ -52,6 +55,7 @@ export function applyPatch(task: Task, p: TaskPatch): Task {
   if (p.description !== undefined) next.description = p.description;
   if (p.priority !== undefined) next.priority = p.priority;
   if (p.assigneeId !== undefined) next.assigneeId = p.assigneeId;
+  if (p.reviewerId !== undefined) next.reviewerId = p.reviewerId;
   if (p.sprintId !== undefined) next.sprintId = p.sprintId;
   if (p.estimate !== undefined) next.estimate = p.estimate;
   if (p.dueDate !== undefined) next.dueDate = p.dueDate;
@@ -106,6 +110,7 @@ export async function createTask(fields: Partial<Task> & { projectId: ID; title:
     statusId: fields.statusId ?? '',
     priority: 0,
     assigneeId: null,
+    reviewerId: null,
     creatorId: me.value?.id ?? null,
     sprintId: null,
     estimate: null,
@@ -155,6 +160,56 @@ async function restoreTasks(removed: Task[]) {
     await api.post('/tasks/restore', { ids: removed.map((tk) => tk.id) });
   } catch (err) {
     batch(() => removed.forEach((tk) => drop(tasks, tk.id)));
+    reportError(err);
+  }
+}
+
+/* -------------------------------- attachments -------------------------------- */
+
+export const attachmentUrl = (id: ID) => `/api/attachments/${id}`;
+
+/** Types shown as a picture (in tiles and as Markdown images). */
+export const isImage = (type: string) => /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)$/.test(type);
+
+/**
+ * Starts uploading files to a task. Ids are chosen here and returned right away, so a description
+ * or comment can link to a file before its upload has finished. Files over the limit are skipped.
+ */
+export function uploadFiles(taskId: ID, files: File[]): { id: ID; name: string; type: string }[] {
+  const started: { id: ID; name: string; type: string }[] = [];
+  for (const file of files) {
+    const name = file.name || 'file';
+    if (uploadLimit.value && file.size > uploadLimit.value) {
+      toast(t('attach.tooLarge', { name, limit: formatSize(uploadLimit.value) }), { kind: 'error' });
+      continue;
+    }
+    const id = newId();
+    put(uploads, { id, taskId, name, type: file.type, size: file.size, loaded: 0 });
+    started.push({ id, name, type: file.type });
+    const query = new URLSearchParams({ id, name });
+    api
+      .upload<Attachment>(`/tasks/${taskId}/attachments?${query}`, file, (loaded) => {
+        const upload = uploads.value[id];
+        if (upload) put(uploads, { ...upload, loaded });
+      })
+      .then((attachment) => put(attachments, attachment))
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 413) toast(t('attach.tooLarge', { name, limit: formatSize(uploadLimit.value) }), { kind: 'error' });
+        else reportError(err);
+      })
+      .finally(() => drop(uploads, id));
+  }
+  return started;
+}
+
+export async function deleteAttachment(id: ID) {
+  const attachment = attachments.value[id];
+  if (!attachment) return;
+  drop(attachments, id);
+  try {
+    await api.del(`/attachments/${id}`);
+  } catch (err) {
+    put(attachments, attachment);
     reportError(err);
   }
 }

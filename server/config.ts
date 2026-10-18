@@ -3,11 +3,17 @@ import { fileURLToPath } from 'node:url';
 
 const env = process.env;
 
+/** Path to the SQLite database file. */
+const databasePath = env.DATABASE_PATH ?? path.resolve(env.DATA_DIR ?? 'data', 'tackle.db');
+
 export const config = {
   port: Number(env.PORT ?? 3000),
   host: env.HOST ?? '0.0.0.0',
-  /** Path to the SQLite database file. */
-  databasePath: env.DATABASE_PATH ?? path.resolve(env.DATA_DIR ?? 'data', 'tackle.db'),
+  databasePath,
+  /** Directory for files attached to tasks: next to the database unless set. */
+  attachmentsDir: env.ATTACHMENTS_DIR ?? path.join(path.dirname(databasePath), 'attachments'),
+  /** Largest file that can be attached, in megabytes (a broken value must not lift the limit). */
+  maxUploadMb: Number(env.MAX_UPLOAD_MB) > 0 ? Number(env.MAX_UPLOAD_MB) : 25,
   /** Directory with the built client (index.html + assets). */
   publicDir: env.PUBLIC_DIR ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'public'),
   /**

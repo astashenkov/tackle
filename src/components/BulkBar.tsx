@@ -1,8 +1,8 @@
-import { CalendarClock, CircleDot, SignalHigh, Tag, Timer, Trash2, User as UserIcon, X } from 'lucide-preact';
+import { CalendarClock, CircleDot, Eye, SignalHigh, Tag, Timer, Trash2, User as UserIcon, X } from 'lucide-preact';
 import { t } from '../lib/i18n';
 import { tasks } from '../store/data';
 import { clearSelection, selectedIds } from '../store/ui';
-import { pickAssignee, pickDueDate, pickLabels, pickPriority, pickSprint, pickStatus } from './pickers';
+import { pickAssignee, pickDueDate, pickLabels, pickPriority, pickReviewer, pickSprint, pickStatus } from './pickers';
 import { confirmDelete } from './TaskPanel';
 
 export function BulkBar() {
@@ -24,6 +24,9 @@ export function BulkBar() {
       <button class="btn ghost sm" onClick={(e) => pickAssignee(e.currentTarget, ids)}>
         <UserIcon size={14} />
         <span class="hide-sm">{t('prop.assignee')}</span>
+      </button>
+      <button class="btn ghost sm" onClick={(e) => pickReviewer(e.currentTarget, ids)} title={t('prop.reviewer')}>
+        <Eye size={14} />
       </button>
       <button class="btn ghost sm" onClick={(e) => pickLabels(e.currentTarget, ids)}>
         <Tag size={14} />

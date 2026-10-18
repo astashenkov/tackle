@@ -4,6 +4,7 @@ import { isClosed, taskRef } from '../store/data';
 import { focusedId, openTaskRef, selectedIds, toggleSelected } from '../store/ui';
 import {
   TaskAssigneeButton,
+  TaskAttachments,
   TaskChecklist,
   TaskDue,
   TaskEstimate,
@@ -38,6 +39,7 @@ export function TaskCard({ task, ordered, showStatus = false }: { task: Task; or
         <TaskDue task={task} />
         <TaskEstimate task={task} />
         <TaskChecklist task={task} />
+        <TaskAttachments task={task} />
         <TaskLabels task={task} max={2} />
       </div>
     </div>
@@ -84,6 +86,7 @@ export function TaskRow({
       <span class="row-title">{task.title}</span>
       <span class="row-props">
         <TaskChecklist task={task} />
+        <TaskAttachments task={task} />
         <TaskLabels task={task} max={3} />
         {showSprint && <TaskSprint task={task} />}
         <TaskDue task={task} />

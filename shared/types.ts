@@ -84,6 +84,8 @@ export interface Task {
   statusId: ID;
   priority: Priority;
   assigneeId: ID | null;
+  /** Who reviews the work before it is done. */
+  reviewerId: ID | null;
   creatorId: ID | null;
   sprintId: ID | null;
   estimate: number | null;
@@ -96,6 +98,19 @@ export interface Task {
   updatedAt: number;
   startedAt: number | null;
   completedAt: number | null;
+}
+
+/** A file attached to a task. The file itself is served by GET /api/attachments/:id. */
+export interface Attachment {
+  id: ID;
+  taskId: ID;
+  uploaderId: ID | null;
+  name: string;
+  /** MIME type reported by the uploader's browser. */
+  type: string;
+  /** Size in bytes. */
+  size: number;
+  createdAt: number;
 }
 
 export interface Comment {
@@ -114,10 +129,12 @@ export type ActivityKind =
   | 'status'
   | 'priority'
   | 'assignee'
+  | 'reviewer'
   | 'sprint'
   | 'estimate'
   | 'due'
   | 'labels'
+  | 'attachments'
   | 'deleted'
   | 'restored';
 
@@ -126,12 +143,12 @@ export interface Activity {
   taskId: ID;
   actorId: ID | null;
   kind: ActivityKind;
-  /** `from`/`to` values for field changes; label changes use `added`/`removed`. */
-  data: { from?: unknown; to?: unknown; added?: ID[]; removed?: ID[] };
+  /** `from`/`to` values for field changes; label changes use `added`/`removed` with label ids, attachment changes with file names. */
+  data: { from?: unknown; to?: unknown; added?: string[]; removed?: string[] };
   createdAt: number;
 }
 
-export type NotificationKind = 'assigned' | 'comment' | 'mention' | 'status';
+export type NotificationKind = 'assigned' | 'review' | 'comment' | 'mention' | 'status';
 
 export interface Notification {
   id: number;
@@ -161,8 +178,11 @@ export interface Snapshot {
   labels: Label[];
   sprints: Sprint[];
   tasks: Task[];
+  attachments: Attachment[];
   unread: number;
   serverTime: number;
+  /** Largest file the server accepts, in bytes. */
+  uploadLimit: number;
 }
 
 /** Shape of a task patch accepted by PATCH /api/tasks/:id and POST /api/tasks/bulk. */
@@ -172,6 +192,7 @@ export interface TaskPatch {
   statusId?: ID;
   priority?: Priority;
   assigneeId?: ID | null;
+  reviewerId?: ID | null;
   sprintId?: ID | null;
   estimate?: number | null;
   dueDate?: string | null;
@@ -194,6 +215,8 @@ export type ServerEvent =
   | { type: 'status.delete'; data: { id: ID } }
   | { type: 'user.upsert'; data: User }
   | { type: 'workspace.update'; data: Workspace }
+  | { type: 'attachment.upsert'; data: Attachment }
+  | { type: 'attachment.delete'; data: { id: ID } }
   | { type: 'timeline'; data: { taskId: ID } }
   | { type: 'notification'; data: Notification }
   | { type: 'notifications.read'; data: { ids: number[] | 'all' } }

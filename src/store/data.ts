@@ -1,5 +1,5 @@
 import { computed, signal, type Signal } from '@preact/signals';
-import type { ID, Label, Notification, Project, Snapshot, Sprint, Status, Task, User, Workspace } from '../../shared/types';
+import type { Attachment, ID, Label, Notification, Project, Snapshot, Sprint, Status, Task, User, Workspace } from '../../shared/types';
 import { CLOSED_CATEGORIES } from '../../shared/constants';
 
 /* The whole workspace lives in memory: every view filters and groups locally, so navigation is instant. */
@@ -15,6 +15,11 @@ export const statuses = signal<Dict<Status>>({});
 export const labels = signal<Dict<Label>>({});
 export const sprints = signal<Dict<Sprint>>({});
 export const tasks = signal<Dict<Task>>({});
+export const attachments = signal<Dict<Attachment>>({});
+/** Largest file the server accepts, in bytes. */
+export const uploadLimit = signal(0);
+/** Files on their way to the server, by the id their attachment will get. */
+export const uploads = signal<Dict<{ id: ID; taskId: ID; name: string; type: string; size: number; loaded: number }>>({});
 export const notifications = signal<Notification[] | null>(null);
 export const snapshotUnread = signal(0);
 export const connection = signal<'online' | 'connecting'>('connecting');
@@ -33,6 +38,14 @@ export const userList = computed(() =>
 );
 export const labelList = computed(() => Object.values(labels.value).sort((a, b) => a.name.localeCompare(b.name)));
 export const taskList = computed(() => Object.values(tasks.value));
+
+/** Attachments per task id, oldest first. */
+export const attachmentsByTask = computed(() => {
+  const map: Record<ID, Attachment[]> = {};
+  for (const a of Object.values(attachments.value)) (map[a.taskId] ??= []).push(a);
+  for (const list of Object.values(map)) list.sort((a, b) => a.createdAt - b.createdAt || a.name.localeCompare(b.name));
+  return map;
+});
 
 export const projectsByKey = computed(() => {
   const map: Record<string, Project> = {};
@@ -110,6 +123,8 @@ export function applySnapshot(s: Snapshot) {
   labels.value = index(s.labels);
   sprints.value = index(s.sprints);
   tasks.value = index(s.tasks);
+  attachments.value = index(s.attachments);
+  uploadLimit.value = s.uploadLimit;
   snapshotUnread.value = s.unread;
   ready.value = true;
 }
@@ -123,5 +138,6 @@ export function clearData() {
   labels.value = {};
   sprints.value = {};
   tasks.value = {};
+  attachments.value = {};
   notifications.value = null;
 }

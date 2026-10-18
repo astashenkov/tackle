@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { CalendarClock, CircleSlash, Hash, Plus } from 'lucide-preact';
+import { CalendarClock, CircleSlash, Eye, Hash, Plus } from 'lucide-preact';
 import type { ID, Priority, Task } from '../../shared/types';
 import { dueLabel } from '../lib/date';
 import { t, priorityName } from '../lib/i18n';
@@ -12,7 +12,7 @@ import { PriorityIcon, StatusIcon } from './Icons';
 import { MentionTextarea } from './MentionTextarea';
 import { Modal } from './Modal';
 import { openPicker } from './Picker';
-import { pickAssignee, pickDueDate, pickEstimate, pickLabels, pickPriority, pickSprint, pickStatus } from './pickers';
+import { pickAssignee, pickDueDate, pickEstimate, pickLabels, pickPriority, pickReviewer, pickSprint, pickStatus } from './pickers';
 import { openTaskPanel } from './TaskPanel';
 import { toast } from './Toasts';
 
@@ -23,6 +23,7 @@ type Draft = {
   statusId: ID;
   priority: Priority;
   assigneeId: ID | null;
+  reviewerId: ID | null;
   labelIds: ID[];
   estimate: number | null;
   sprintId: ID | null;
@@ -40,6 +41,7 @@ function initialDraft(defaults: Partial<Task>): Draft {
     statusId,
     priority: defaults.priority ?? 0,
     assigneeId: defaults.assigneeId ?? null,
+    reviewerId: defaults.reviewerId ?? null,
     labelIds: defaults.labelIds ?? [],
     estimate: defaults.estimate ?? null,
     sprintId: defaults.sprintId ?? null,
@@ -64,6 +66,7 @@ function CreateTaskForm({ defaults }: { defaults: Partial<Task> }) {
   const project = projects.value[draft.projectId];
   const status = statuses.value[draft.statusId];
   const assignee = draft.assigneeId ? users.value[draft.assigneeId] : null;
+  const reviewer = draft.reviewerId ? users.value[draft.reviewerId] : null;
   const sprint = draft.sprintId ? sprints.value[draft.sprintId] : null;
   const draftLabels = draft.labelIds.map((l) => labels.value[l]).filter(Boolean);
 
@@ -168,6 +171,11 @@ function CreateTaskForm({ defaults }: { defaults: Partial<Task> }) {
           <button class="prop-pill" onClick={(e) => pickAssignee(e.currentTarget, [], (id) => set('assigneeId', id), draft.assigneeId)}>
             <Avatar user={assignee} size={16} />
             {assignee?.name ?? t('prop.assignee')}
+          </button>
+          {/* The eye tells it apart from the assignee once a name is shown. */}
+          <button class="prop-pill" title={t('prop.reviewer')} onClick={(e) => pickReviewer(e.currentTarget, [], (id) => set('reviewerId', id), draft.reviewerId)}>
+            <Eye size={14} />
+            {reviewer?.name ?? t('prop.reviewer')}
           </button>
           <button
             class="prop-pill"

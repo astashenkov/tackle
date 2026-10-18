@@ -14,19 +14,19 @@ Tackle is a lightweight issue tracker built for small teams and early-stage star
 
 - **Instant.** The whole workspace is loaded into the browser once; filtering, grouping and navigation never wait for the network. Every change is applied optimistically and synced in the background.
 - **Live.** Teammates see each other's changes immediately (Server-Sent Events), no refresh needed.
-- **Keyboard-first.** `⌘K` command menu, `C` to create, `J`/`K` to move, `S` `P` `A` `L` `E` `D` to change properties of the selected or open task. Works with any keyboard layout, including Cyrillic.
+- **Keyboard-first.** `⌘K` command menu, `C` to create, `J`/`K` to move, `S` `P` `A` `R` `L` `E` `D` to change properties of the selected or open task. Works with any keyboard layout, including Cyrillic.
 - **Tiny to run.** One Node.js process and one SQLite file. The production server is a single bundled file with zero runtime dependencies; the client is ~60 KB gzipped.
 - **Opinionated, not configurable to death.** Sensible defaults for statuses, priorities and labels — change them if you need to, ignore them if you don't.
 
 ## Features
 
-**Tasks** — short ids per project (`WEB-42`), status, priority (urgent → low), assignee, labels, story points, due date, sprint. Markdown descriptions with clickable checklists, task references (`WEB-12` becomes a link) and `@mentions`. Full activity history (rapid edits are merged, so dragging a card around doesn't spam it) and comments.
+**Tasks** — short ids per project (`WEB-42`), status, priority (urgent → low), assignee, reviewer, labels, story points, due date, sprint. Markdown descriptions with clickable checklists, task references (`WEB-12` becomes a link) and `@mentions`. File attachments: pick, drop or paste files; a screenshot pasted into a description or comment shows up right there. Full activity history (rapid edits are merged, so dragging a card around doesn't spam it) and comments.
 
-**Views** — Kanban board with drag and drop (mouse and touch), list view grouped by status, assignee, priority, sprint or label, *My tasks* across all projects. Filters (status, assignee, priority, label, sprint, text) and display options are remembered per view. Completed tasks older than two weeks are tucked away automatically so boards stay clean.
+**Views** — Kanban board with drag and drop (mouse and touch), list view grouped by status, assignee, priority, sprint or label, *My tasks* (assigned, to review, created) across all projects. Filters (status, assignee, reviewer, priority, label, sprint, text) and display options are remembered per view. Completed tasks older than two weeks are tucked away automatically so boards stay clean.
 
 **Sprints** — plan by dragging tasks between sprints and the backlog, start a sprint, track progress and a burndown chart, complete it and carry unfinished work over to the next sprint (or a new one, or the backlog) in one step.
 
-**Team** — invite links (no email server needed), admin/member roles, password reset links, deactivating members. Inbox with notifications when you are assigned, mentioned, or when someone comments on or moves your tasks.
+**Team** — invite links (no email server needed), admin/member roles, password reset links, deactivating members. Inbox with notifications when you are assigned, asked to review, mentioned, or when someone comments on or moves your tasks.
 
 **Polish** — light and dark themes, English and Russian UI, bulk edit for multi-selected tasks, undo for deletions, copy task link / git branch name (`web-42-fix-login`), works on phones and can be added to the home screen.
 
@@ -56,7 +56,7 @@ Hosting on a Raspberry Pi or another small server? See **[docs/DEPLOY.md](docs/D
 docker compose up -d
 ```
 
-The database lives in the `tackle-data` volume (`/data/tackle.db` inside the container).
+The database and attached files live in the `tackle-data` volume (`/data/tackle.db` and `/data/attachments` inside the container).
 
 ### Configuration
 
@@ -66,15 +66,17 @@ The database lives in the `tackle-data` volume (`/data/tackle.db` inside the con
 | `HOST` | `0.0.0.0` | Interface to bind |
 | `DATA_DIR` | `./data` | Directory for the database |
 | `DATABASE_PATH` | `$DATA_DIR/tackle.db` | Full path to the SQLite file |
+| `ATTACHMENTS_DIR` | `attachments` next to the database | Directory for files attached to tasks |
+| `MAX_UPLOAD_MB` | `25` | Largest file that can be attached |
 | `SECURE_COOKIES` | `auto` | `auto` marks the session cookie `Secure` when the request came over HTTPS (or `X-Forwarded-Proto: https`); `true`/`false` to force |
 | `SESSION_DAYS` | `30` | Session lifetime |
 | `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for the client IP (sign-in rate limiting). Enable only behind a reverse proxy |
 
-Put Tackle behind any reverse proxy (Caddy, nginx, Traefik) for HTTPS. Server-Sent Events need response buffering disabled for `/api/events` — Tackle sends `X-Accel-Buffering: no`, which nginx honours.
+Put Tackle behind any reverse proxy (Caddy, nginx, Traefik) for HTTPS. Server-Sent Events need response buffering disabled for `/api/events` — Tackle sends `X-Accel-Buffering: no`, which nginx honours. nginx also limits request bodies to 1 MB by default: raise `client_max_body_size` to `MAX_UPLOAD_MB` so attachments get through.
 
 ### Backups
 
-All data is in one SQLite file. `npm run backup` (or `node dist/server.mjs backup [file]`) writes a consistent copy to `data/backups/` even while the server is running. A JSON export is available in *Settings → Data*.
+All data is in one SQLite file, and attached files are in the `attachments` folder next to it. `npm run backup` (or `node dist/server.mjs backup [file]`) writes a consistent copy of the database to `data/backups/` even while the server is running. Attached files never change once uploaded, so copying the folder alongside (`rsync -a data/attachments/ <backup>/attachments/`) is enough. A JSON export is available in *Settings → Data*; it lists attachments but doesn't include the files.
 
 ## Keyboard shortcuts
 
@@ -86,7 +88,7 @@ All data is in one SQLite file. `npm run backup` (or `node dist/server.mjs backu
 | `J` `K` / `↑` `↓`, `←` `→` | Move between tasks / board columns |
 | `Enter` | Open task |
 | `X`, `⇧↑` `⇧↓`, `⌘A` | Select, extend selection, select all |
-| `S` `P` `A` `L` `E` `D` `⇧S` | Status, priority, assignee, labels, estimate, due date, sprint |
+| `S` `P` `A` `R` `L` `E` `D` `⇧S` | Status, priority, assignee, reviewer, labels, estimate, due date, sprint |
 | `I` | Assign to me |
 | `⌘⌫` | Delete |
 | `G` then `M` / `I` / `B` / `L` / `S` / `,` | My tasks, inbox, board, list, sprints, settings |

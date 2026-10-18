@@ -1,9 +1,9 @@
 import { checklistProgress } from '../../shared/constants';
 import type { Task } from '../../shared/types';
-import { CalendarClock, CheckSquare, Hash } from 'lucide-preact';
+import { CalendarClock, CheckSquare, Hash, Paperclip } from 'lucide-preact';
 import { dueLabel, dueState } from '../lib/date';
 import { t, priorityName } from '../lib/i18n';
-import { isClosed, labels, sprints, statuses, users } from '../store/data';
+import { attachmentsByTask, isClosed, labels, sprints, statuses, users } from '../store/data';
 import { focusedId, selectedIds, toggleSelected } from '../store/ui';
 import { openTaskPanel } from './TaskPanel';
 import { Avatar } from './Avatar';
@@ -146,6 +146,17 @@ export function TaskChecklist({ task }: { task: Task }) {
     <span class={`chip static${done === total ? ' complete' : ''}`} title={t('prop.checklist')}>
       <CheckSquare size={12} />
       {done}/{total}
+    </span>
+  );
+}
+
+export function TaskAttachments({ task }: { task: Task }) {
+  const count = attachmentsByTask.value[task.id]?.length;
+  if (!count) return null;
+  return (
+    <span class="chip static" title={t('prop.attachments')}>
+      <Paperclip size={12} />
+      {count}
     </span>
   );
 }

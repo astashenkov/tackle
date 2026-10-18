@@ -327,6 +327,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
       ['p', 'prop.priority'],
       ['a', 'prop.assignee'],
       ['i', 'palette.assignMe'],
+      ['r', 'prop.reviewer'],
       ['l', 'prop.labels'],
       ['e', 'prop.estimate'],
       ['d', 'prop.dueDate'],
