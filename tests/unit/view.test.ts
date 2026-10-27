@@ -2,13 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Sprint, Status, Task } from '../../shared/types';
 import { checklistProgress, extractMentions, slugify } from '../../shared/constants';
-import { emptyFilters, filterTasks, groupTasks, positionBetween, sortTasks, type ViewContext } from '../../src/lib/view';
+import { emptyFilters, filterTasks, groupByMonth, groupTasks, positionBetween, sortTasks, type ViewContext } from '../../src/lib/view';
 
 const statusList: Status[] = [
   { id: 'backlog', name: 'Backlog', category: 'backlog', color: '#999', position: 1 },
   { id: 'todo', name: 'Todo', category: 'unstarted', color: '#999', position: 2 },
   { id: 'doing', name: 'Doing', category: 'started', color: '#999', position: 3 },
   { id: 'done', name: 'Done', category: 'completed', color: '#999', position: 4 },
+  { id: 'canceled', name: 'Canceled', category: 'canceled', color: '#999', position: 5 },
 ];
 const sprints: Sprint[] = [
   { id: 's1', projectId: 'p', number: 1, name: 'S1', goal: '', startDate: '2026-01-01', endDate: '2026-01-14', state: 'completed', completedAt: 1, stats: null, createdAt: 0 },
@@ -52,6 +53,7 @@ function task(p: Partial<Task>): Task {
     updatedAt: n,
     startedAt: null,
     completedAt: null,
+    archivedAt: null,
     ...p,
   };
 }
@@ -62,11 +64,30 @@ const c = task({ title: 'Old done', statusId: 'done', completedAt: NOW - 30 * 86
 const d = task({ title: 'New done', statusId: 'done', completedAt: NOW - 86_400_000, priority: 1 });
 const all = [a, b, c, d];
 
-test('hides old completed tasks in "recent" mode', () => {
-  const ids = filterTasks(all, emptyFilters(), { completed: 'recent' }, ctx).map((t) => t.id);
-  assert.deepEqual(ids, [a.id, b.id, d.id]);
-  assert.equal(filterTasks(all, emptyFilters(), { completed: 'all' }, ctx).length, 4);
-  assert.equal(filterTasks(all, emptyFilters(), { completed: 'none' }, ctx).length, 2);
+test('"recent" mode keeps done tasks until they are archived and hides old canceled ones', () => {
+  const oldCanceled = task({ statusId: 'canceled', completedAt: NOW - 15 * 86_400_000 });
+  const newCanceled = task({ statusId: 'canceled', completedAt: NOW - 13 * 86_400_000 });
+  const tasks = [...all, oldCanceled, newCanceled];
+  const ids = filterTasks(tasks, emptyFilters(), { completed: 'recent' }, ctx).map((t) => t.id);
+  // A month-old done task stays on the board: the monthly archive, not its age, takes it away.
+  assert.deepEqual(ids, [a.id, b.id, c.id, d.id, newCanceled.id]);
+  assert.equal(filterTasks(tasks, emptyFilters(), { completed: 'all' }, ctx).length, 6);
+  assert.deepEqual(filterTasks(tasks, emptyFilters(), { completed: 'none' }, ctx).map((t) => t.id), [a.id, b.id]);
+});
+
+test('groups archived tasks by the month they were finished in, newest first', () => {
+  const at = (month: number, day: number, hour = 12) => new Date(2026, month - 1, day, hour).getTime();
+  const sept = task({ statusId: 'done', completedAt: at(9, 30, 23) });
+  const octEarly = task({ statusId: 'done', completedAt: at(10, 1, 0) });
+  const octLate = task({ statusId: 'done', completedAt: at(10, 31, 23) });
+  // Moved into a "completed" status by re-categorizing it, so it has no completion time.
+  const recategorized = task({ statusId: 'done', completedAt: null, updatedAt: at(8, 14) });
+  const groups = groupByMonth([octEarly, recategorized, sept, octLate]);
+  assert.deepEqual(groups.map((g) => g.key), ['2026-10', '2026-09', '2026-08']);
+  assert.deepEqual(groups[0].tasks.map((t) => t.id), [octLate.id, octEarly.id]);
+  assert.deepEqual(groups[2].tasks.map((t) => t.id), [recategorized.id]);
+  assert.ok(groups.every((g) => g.kind === 'month' && g.patch === null), 'dropping a task on a month changes nothing');
+  assert.deepEqual(groupByMonth([]), []);
 });
 
 test('filters by assignee, reviewer, label, sprint and text', () => {
@@ -89,7 +110,7 @@ test('sorts by priority with "no priority" last', () => {
 
 test('groups by status in workflow order and by sprint with backlog last', () => {
   const byStatus = groupTasks(all, 'status', ctx, true);
-  assert.deepEqual(byStatus.map((g) => g.key), ['backlog', 'todo', 'doing', 'done']);
+  assert.deepEqual(byStatus.map((g) => g.key), ['backlog', 'todo', 'doing', 'done', 'canceled']);
   assert.deepEqual(byStatus.find((g) => g.key === 'done')!.patch, { statusId: 'done' });
   const bySprint = groupTasks(all, 'sprint', ctx, false);
   assert.deepEqual(bySprint.map((g) => g.key), ['s2', 's1', 'none']);

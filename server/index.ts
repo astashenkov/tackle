@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
+import { scheduleArchive } from './archive';
 import { backupDatabase, defaultBackupPath } from './backup';
 import { config } from './config';
 import { DB } from './db';
@@ -20,6 +21,7 @@ if (command === 'backup') {
 const db = new DB(config.databasePath);
 const { app, ctx } = createApp({ db, publicDir: config.publicDir });
 ctx.files.sweep();
+scheduleArchive(ctx);
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
   const host = config.host === '0.0.0.0' ? 'localhost' : config.host;

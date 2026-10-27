@@ -22,7 +22,9 @@ Tackle is a lightweight issue tracker built for small teams and early-stage star
 
 **Tasks** — short ids per project (`WEB-42`), status, priority (urgent → low), assignee, reviewer, labels, story points, due date, sprint. Markdown descriptions with clickable checklists, task references (`WEB-12` becomes a link) and `@mentions`. File attachments: pick, drop or paste files; a screenshot pasted into a description or comment shows up right there. Full activity history (rapid edits are merged, so dragging a card around doesn't spam it) and comments.
 
-**Views** — Kanban board with drag and drop (mouse and touch), list view grouped by status, assignee, priority, sprint or label, *My tasks* (assigned, to review, created) across all projects. Filters (status, assignee, reviewer, priority, label, sprint, text) and display options are remembered per view. Completed tasks older than two weeks are tucked away automatically so boards stay clean.
+**Views** — Kanban board with drag and drop (mouse and touch), list view grouped by status, assignee, priority, sprint or label, *My tasks* (assigned, to review, created) across all projects. Filters (status, assignee, reviewer, priority, label, sprint, text) and display options are remembered per view.
+
+**Archive** — on the 1st of every month done tasks move to the project's *Archive*, grouped by the month they were finished in, so the Done column only shows this month's work. Tasks of a running sprint wait until the sprint is completed; reopening an archived task brings it back to the board. Canceled tasks are tucked away from boards after two weeks.
 
 **Sprints** — plan by dragging tasks between sprints and the backlog, start a sprint, track progress and a burndown chart, complete it and carry unfinished work over to the next sprint (or a new one, or the backlog) in one step.
 
@@ -71,6 +73,7 @@ The database and attached files live in the `tackle-data` volume (`/data/tackle.
 | `SECURE_COOKIES` | `auto` | `auto` marks the session cookie `Secure` when the request came over HTTPS (or `X-Forwarded-Proto: https`); `true`/`false` to force |
 | `SESSION_DAYS` | `30` | Session lifetime |
 | `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for the client IP (sign-in rate limiting). Enable only behind a reverse proxy |
+| `TZ` | system | Time zone whose midnight on the 1st starts a new month for the archive, e.g. `Europe/Moscow` |
 
 Put Tackle behind any reverse proxy (Caddy, nginx, Traefik) for HTTPS. Server-Sent Events need response buffering disabled for `/api/events` — Tackle sends `X-Accel-Buffering: no`, which nginx honours. nginx also limits request bodies to 1 MB by default: raise `client_max_body_size` to `MAX_UPLOAD_MB` so attachments get through.
 
@@ -91,7 +94,7 @@ All data is in one SQLite file, and attached files are in the `attachments` fold
 | `S` `P` `A` `R` `L` `E` `D` `⇧S` | Status, priority, assignee, reviewer, labels, estimate, due date, sprint |
 | `I` | Assign to me |
 | `⌘⌫` | Delete |
-| `G` then `M` / `I` / `B` / `L` / `S` / `,` | My tasks, inbox, board, list, sprints, settings |
+| `G` then `M` / `I` / `B` / `L` / `S` / `A` / `,` | My tasks, inbox, board, list, sprints, archive, settings |
 | `?` | All shortcuts |
 
 ## Development

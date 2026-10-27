@@ -98,6 +98,8 @@ export interface Task {
   updatedAt: number;
   startedAt: number | null;
   completedAt: number | null;
+  /** When the task was moved to the archive: done tasks go there on the 1st of the next month. */
+  archivedAt: number | null;
 }
 
 /** A file attached to a task. The file itself is served by GET /api/attachments/:id. */
@@ -136,7 +138,8 @@ export type ActivityKind =
   | 'labels'
   | 'attachments'
   | 'deleted'
-  | 'restored';
+  | 'restored'
+  | 'archived';
 
 export interface Activity {
   id: number;

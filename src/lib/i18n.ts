@@ -73,6 +73,7 @@ const en = {
   'view.board': 'Board',
   'view.list': 'List',
   'view.sprints': 'Sprints',
+  'view.archive': 'Archive',
 
   'conn.reconnecting': 'Reconnecting…',
 
@@ -124,6 +125,7 @@ const en = {
   'task.notFound': 'Task {ref} was not found. It may have been deleted.',
   'task.createdBy': '{name} created this {time}',
   'task.updated': 'updated {time}',
+  'task.archived': 'archived {date}',
 
   'comment.placeholder': 'Leave a comment…',
   'comment.hint': 'Markdown & @mentions · ⌘↵ to send',
@@ -166,6 +168,7 @@ const en = {
   'activity.attachmentsRemovedAnd': ' and deleted {files}',
   'activity.deleted': '{actor} deleted the task',
   'activity.restored': '{actor} restored the task',
+  'activity.archived': 'Moved to the archive',
 
   'picker.status': 'Change status…',
   'picker.priority': 'Set priority…',
@@ -216,6 +219,9 @@ const en = {
   'empty.createdTitle': 'You haven’t created any tasks yet',
   'empty.reviewTitle': 'Nothing to review',
   'empty.myText': 'Tasks appear here as soon as they are assigned to you, sent to you for review or created by you.',
+
+  'archive.emptyTitle': 'Nothing archived yet',
+  'archive.emptyText': 'Done tasks move here on the 1st of every month, so the board only shows what was finished this month.',
 
   'my.assigned': 'Assigned',
   'my.review': 'To review',

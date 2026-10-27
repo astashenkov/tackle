@@ -19,7 +19,7 @@ import {
 import { slugify } from '../../shared/constants';
 import type { Activity, Comment, ID, Task } from '../../shared/types';
 import { api, newId } from '../lib/api';
-import { dueLabel, dueState, formatDate, formatDateTime, relativeTime } from '../lib/date';
+import { dueLabel, dueState, formatDate, formatDateTime, isoDate, relativeTime } from '../lib/date';
 import { t, tx, priorityName } from '../lib/i18n';
 import { pastedFiles } from '../lib/files';
 import { hasLayer, useHotkeys } from '../lib/hotkeys';
@@ -330,6 +330,8 @@ function describeActivity(a: Activity): ComponentChildren {
       return tx('activity.deleted', { actor });
     case 'restored':
       return tx('activity.restored', { actor });
+    case 'archived':
+      return t('activity.archived');
   }
 }
 
@@ -680,6 +682,7 @@ export function TaskPanel() {
         <div class="panel-meta">
           {tx('task.createdBy', { name: <strong>{creator?.name ?? t('common.someone')}</strong>, time: relativeTime(task.createdAt) })}
           {task.updatedAt - task.createdAt > 60_000 && <> · {t('task.updated', { time: relativeTime(task.updatedAt) })}</>}
+          {task.archivedAt && <> · {t('task.archived', { date: formatDate(isoDate(new Date(task.archivedAt))) })}</>}
         </div>
         <Timeline task={task} />
       </div>

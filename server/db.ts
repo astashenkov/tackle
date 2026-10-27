@@ -181,6 +181,9 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX attachments_task ON attachments(task_id);
   `,
+  /* 4: archive for done tasks */ `
+  ALTER TABLE tasks ADD COLUMN archived_at INTEGER;
+  `,
 ];
 
 export type Row = Record<string, SQLInputValue>;
@@ -347,6 +350,7 @@ export const toTask = (r: R, labelIds: string[]): Task => ({
   updatedAt: r.updated_at,
   startedAt: r.started_at ?? null,
   completedAt: r.completed_at ?? null,
+  archivedAt: r.archived_at ?? null,
 });
 
 export const toAttachment = (r: R): Attachment => ({

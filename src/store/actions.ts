@@ -66,6 +66,7 @@ export function applyPatch(task: Task, p: TaskPatch): Task {
     const to = statuses.value[p.statusId]?.category;
     if (to && CLOSED_CATEGORIES.has(to) && !(from && CLOSED_CATEGORIES.has(from))) next.completedAt = Date.now();
     if (to && !CLOSED_CATEGORIES.has(to)) next.completedAt = null;
+    if (to && to !== 'completed') next.archivedAt = null;
     if (to === 'started' && !next.startedAt) next.startedAt = Date.now();
   }
   if (p.labelIds || p.addLabelIds || p.removeLabelIds) {
@@ -120,13 +121,14 @@ export async function createTask(fields: Partial<Task> & { projectId: ID; title:
     updatedAt: now,
     startedAt: null,
     completedAt: null,
+    archivedAt: null,
     ...fields,
     position,
   };
   put(tasks, optimistic);
   begin(id);
   try {
-    const { number: _n, createdAt: _c, updatedAt: _u, startedAt: _s, completedAt: _d, creatorId: _cr, ...body } = optimistic;
+    const { number: _n, createdAt: _c, updatedAt: _u, startedAt: _s, completedAt: _d, archivedAt: _a, creatorId: _cr, ...body } = optimistic;
     const created = await api.post<Task>('/tasks', body);
     end(id);
     put(tasks, created);

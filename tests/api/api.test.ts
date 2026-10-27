@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Activity, Attachment, Notification, Snapshot, Sprint, Task } from '../../shared/types';
 import { createApp } from '../../server/app';
+import { archiveDoneTasks, nextMonthStart, scheduleArchive } from '../../server/archive';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { hashPassword } from '../../server/auth';
 import { backupDatabase } from '../../server/backup';
-import { DB, MIGRATIONS } from '../../server/db';
+import { DB, MIGRATIONS, loadAllTasks } from '../../server/db';
 
 type App = ReturnType<typeof createApp>['app'];
 
@@ -55,6 +56,7 @@ class Client {
 
 let app: App;
 let hub: ReturnType<typeof createApp>['hub'];
+let ctx: ReturnType<typeof createApp>['ctx'];
 let admin: Client;
 let snap: Snapshot;
 let filesDir: string;
@@ -64,7 +66,7 @@ const status = (name: string) => snap.statuses.find((s) => s.name === name)!.id;
 
 beforeEach(async () => {
   filesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tackle-files-'));
-  ({ app, hub } = createApp({ db: new DB(':memory:'), attachmentsDir: filesDir, maxUploadBytes: UPLOAD_LIMIT }));
+  ({ app, hub, ctx } = createApp({ db: new DB(':memory:'), attachmentsDir: filesDir, maxUploadBytes: UPLOAD_LIMIT }));
   admin = new Client(app);
   const res = await admin.post('/setup', {
     workspaceName: 'Acme',
@@ -534,6 +536,118 @@ describe('attachments', () => {
   });
 });
 
+describe('archive', () => {
+  /** A moment in the server's local time; the archive follows the server's calendar. */
+  const at = (y: number, m: number, d: number, h = 12, min = 0, s = 0) => new Date(y, m - 1, d, h, min, s).getTime();
+  const HOUR = 3_600_000;
+
+  /** A task in Done that was finished at the given moment. */
+  async function doneTask(title: string, completedAt: number, fields: Record<string, unknown> = {}) {
+    const t = (await admin.post<Task>('/tasks', { projectId: snap.projects[0].id, title, statusId: status('Done'), ...fields })).data;
+    ctx.db.run('UPDATE tasks SET completed_at = ? WHERE id = ?', completedAt, t.id);
+    return t;
+  }
+  const synced = async (id: string) => (await admin.get<Snapshot>('/sync')).data.tasks.find((x) => x.id === id)!;
+
+  test('on the 1st, everything finished last month leaves the Done column', async () => {
+    const october = await doneTask('Shipped in October', at(2026, 10, 15));
+    const lastMinute = await doneTask('Shipped on Halloween night', at(2026, 10, 31, 23, 59));
+    const november = await doneTask('Shipped on the 1st', at(2026, 11, 1, 0, 0));
+    const canceled = await doneTask('Dropped in October', at(2026, 10, 10), { statusId: status('Canceled') });
+    const open = (await admin.post<Task>('/tasks', { projectId: snap.projects[0].id, title: 'Still going', statusId: status('In Progress') })).data;
+    const deleted = await doneTask('Deleted', at(2026, 10, 3));
+    await admin.post('/tasks/delete', { ids: [deleted.id] });
+    const events: { type: string; data: Task }[] = [];
+    hub.add({ userId: 'observer', clientId: 'observer', send: (p) => events.push(JSON.parse(p)) });
+
+    assert.deepEqual(archiveDoneTasks(ctx, at(2026, 10, 31, 23, 59, 59)), [], 'nothing moves while the month is still on');
+    const firstOfMonth = at(2026, 11, 1, 0, 0, 1);
+    assert.deepEqual(archiveDoneTasks(ctx, firstOfMonth), [october.id, lastMinute.id]);
+
+    assert.equal((await synced(october.id)).archivedAt, firstOfMonth);
+    assert.equal((await synced(lastMinute.id)).archivedAt, firstOfMonth);
+    for (const t of [november, canceled, open]) assert.equal((await synced(t.id)).archivedAt, null, t.title);
+    assert.deepEqual(
+      events.map((e) => [e.type, e.data.id, e.data.archivedAt]),
+      [
+        ['task.upsert', october.id, firstOfMonth],
+        ['task.upsert', lastMinute.id, firstOfMonth],
+      ],
+      'open boards update live',
+    );
+    const { activity } = (await admin.get<{ activity: Activity[] }>(`/tasks/${october.id}/timeline`)).data;
+    assert.deepEqual(activity.map((a) => [a.kind, a.actorId]), [['created', snap.me.id], ['archived', null]]);
+
+    assert.deepEqual(archiveDoneTasks(ctx, at(2026, 11, 20)), [], 'running again during the month changes nothing');
+    assert.equal((await synced(october.id)).archivedAt, firstOfMonth);
+    assert.deepEqual(archiveDoneTasks(ctx, at(2026, 12, 1)), [november.id], 'next month it is November’s turn');
+  });
+
+  test('a task taken out of Done comes back from the archive', async () => {
+    const task = await doneTask('Needs another look', at(2026, 9, 20));
+    archiveDoneTasks(ctx, at(2026, 10, 1));
+
+    // Editing an archived task, or moving it to another "done" status, keeps it in the archive.
+    assert.ok((await admin.patch<Task>(`/tasks/${task.id}`, { priority: 1 })).data.archivedAt);
+    const shipped = (await admin.post('/statuses', { name: 'Shipped', category: 'completed' })).data;
+    assert.ok((await admin.patch<Task>(`/tasks/${task.id}`, { statusId: shipped.id })).data.archivedAt);
+
+    const reopened = (await admin.patch<Task>(`/tasks/${task.id}`, { statusId: status('In Progress') })).data;
+    assert.equal(reopened.archivedAt, null);
+    assert.equal(reopened.completedAt, null);
+
+    // Done once more, it stays on the board until its new month is over.
+    const redone = (await admin.patch<Task>(`/tasks/${task.id}`, { statusId: status('Done') })).data;
+    assert.equal(redone.archivedAt, null);
+    assert.deepEqual(archiveDoneTasks(ctx, redone.completedAt!), []);
+    assert.deepEqual(archiveDoneTasks(ctx, nextMonthStart(redone.completedAt!)), [task.id]);
+  });
+
+  test('tasks of a running sprint wait until the sprint is completed', async () => {
+    const p = snap.projects[0].id;
+    const sprint = (await admin.post<Sprint>('/sprints', { projectId: p, startDate: '2026-10-19', endDate: '2026-11-01' })).data;
+    await admin.post(`/sprints/${sprint.id}/start`);
+    const inSprint = await doneTask('Sprint work', at(2026, 10, 25), { sprintId: sprint.id, estimate: 3 });
+    const outside = await doneTask('Other work', at(2026, 10, 25));
+
+    assert.deepEqual(archiveDoneTasks(ctx, at(2026, 11, 1)), [outside.id]);
+    const res = await admin.post(`/sprints/${sprint.id}/complete`, { moveTo: 'backlog' });
+    assert.deepEqual(res.data.sprint.stats, { total: 1, completed: 1, points: 3, completedPoints: 3 });
+    assert.deepEqual(archiveDoneTasks(ctx, at(2026, 11, 2)), [inSprint.id]);
+    assert.equal((await synced(inSprint.id)).sprintId, sprint.id, 'archived work stays in its sprint');
+  });
+
+  const archivedTitles = () => loadAllTasks(ctx.db).filter((x) => x.archivedAt).map((x) => x.title).sort();
+
+  test('the server archives on start and again at midnight on the 1st', async (t) => {
+    await doneTask('From September', at(2026, 9, 30));
+    await doneTask('From October', at(2026, 10, 31, 20));
+
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: at(2026, 10, 31, 22) });
+    const stop = scheduleArchive(ctx);
+    assert.deepEqual(archivedTitles(), ['From September'], 'catches up on a missed 1st right away');
+    t.mock.timers.tick(HOUR);
+    assert.deepEqual(archivedTitles(), ['From September']);
+    t.mock.timers.tick(HOUR + 2000);
+    assert.deepEqual(archivedTitles(), ['From October', 'From September']);
+    stop();
+  });
+
+  test('the server archives a sprint’s done tasks within an hour of completing it', async (t) => {
+    const sprint = (await admin.post<Sprint>('/sprints', { projectId: snap.projects[0].id, startDate: '2026-10-19', endDate: '2026-11-08' })).data;
+    await admin.post(`/sprints/${sprint.id}/start`);
+    await doneTask('Sprint work', at(2026, 10, 30), { sprintId: sprint.id });
+
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: at(2026, 11, 10, 9) });
+    const stop = scheduleArchive(ctx);
+    assert.deepEqual(archivedTitles(), []);
+    await admin.post(`/sprints/${sprint.id}/complete`, { moveTo: 'backlog' });
+    t.mock.timers.tick(HOUR);
+    assert.deepEqual(archivedTitles(), ['Sprint work']);
+    stop();
+  });
+});
+
 describe('upgrade', () => {
   test('a database left by v0.1 is upgraded in place and keeps its data', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tackle-upgrade-'));
@@ -561,7 +675,7 @@ describe('upgrade', () => {
     const c = new Client(createApp({ db, attachmentsDir: path.join(dir, 'attachments') }).app);
     assert.equal((await c.post('/login', { email: 'alex@example.com', password: 'password123' })).status, 200);
     const s = (await c.get<Snapshot>('/sync')).data;
-    assert.deepEqual(s.tasks.map((x) => [x.title, x.assigneeId, x.reviewerId]), [['Made in v0.1', 'userAlex0001', null]]);
+    assert.deepEqual(s.tasks.map((x) => [x.title, x.assigneeId, x.reviewerId, x.archivedAt]), [['Made in v0.1', 'userAlex0001', null, null]]);
     assert.deepEqual(s.attachments, []);
     assert.equal((await c.get('/tasks/taskOld00001/timeline')).data.comments[0].body, 'Still here?');
 

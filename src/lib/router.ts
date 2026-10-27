@@ -41,7 +41,7 @@ export type Route =
   | { name: 'reset'; token: string }
   | { name: 'my' }
   | { name: 'inbox' }
-  | { name: 'project'; key: string; view: 'board' | 'list' | 'sprints' }
+  | { name: 'project'; key: string; view: 'board' | 'list' | 'sprints' | 'archive' }
   | { name: 'task'; ref: string }
   | { name: 'settings'; tab: string }
   | { name: 'notfound' };
@@ -60,7 +60,7 @@ export function matchRoute(path: string): Route {
   if (a === 'settings') return { name: 'settings', tab: b ?? 'profile' };
   if (a === 'p' && b) {
     const view = c ?? 'board';
-    if (view === 'board' || view === 'list' || view === 'sprints') return { name: 'project', key: b.toUpperCase(), view };
+    if (view === 'board' || view === 'list' || view === 'sprints' || view === 'archive') return { name: 'project', key: b.toUpperCase(), view };
   }
   return { name: 'notfound' };
 }

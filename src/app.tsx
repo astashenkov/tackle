@@ -121,6 +121,7 @@ function GlobalHotkeys() {
     'g b': projectPath('board'),
     'g l': projectPath('list'),
     'g s': projectPath('sprints'),
+    'g a': projectPath('archive'),
     'g ,': () => navigate('/settings'),
     s: act((ids) => pickStatus(anchorFor(ids[0], 'status'), ids)),
     p: act((ids) => pickPriority(anchorFor(ids[0], 'priority'), ids)),

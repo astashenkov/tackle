@@ -36,6 +36,13 @@ export function formatDate(iso: string, opts: { withYear?: boolean } = {}): stri
   });
 }
 
+/** "October 2026" for a YYYY-MM month. */
+export function formatMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  const name = new Date(y, m - 1, 1).toLocaleDateString(lang.value, { month: 'long' });
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${y}`;
+}
+
 export function formatDateTime(ms: number): string {
   return new Date(ms).toLocaleString(lang.value, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }

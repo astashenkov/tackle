@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import {
+  Archive,
   CalendarClock,
   CircleDot,
   Columns3,
@@ -118,6 +119,7 @@ function buildCommands(): Command[] {
     add(nav, `go-${p.key}-board`, `${p.name} · ${t('view.board')}`, <Columns3 size={14} />, () => navigate(`/p/${p.key}/board`), undefined, `${p.key} kanban`);
     add(nav, `go-${p.key}-list`, `${p.name} · ${t('view.list')}`, <List size={14} />, () => navigate(`/p/${p.key}/list`), undefined, p.key);
     add(nav, `go-${p.key}-sprints`, `${p.name} · ${t('view.sprints')}`, <Timer size={14} />, () => navigate(`/p/${p.key}/sprints`), undefined, `${p.key} cycles`);
+    add(nav, `go-${p.key}-archive`, `${p.name} · ${t('view.archive')}`, <Archive size={14} />, () => navigate(`/p/${p.key}/archive`), undefined, `${p.key} done completed`);
   }
   add(nav, 'go-settings', t('nav.settings'), <Settings size={14} />, () => navigate('/settings'), kbd('g ,'), 'preferences');
 

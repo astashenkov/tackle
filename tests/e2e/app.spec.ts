@@ -273,3 +273,34 @@ test('paste and drop files, refuse big ones, use the command menu', async ({ pag
   await expect(page.locator('.panel [data-prop=reviewer]')).toContainText('Sofia Chen');
   await expect(page.locator('.card, .row', { hasText: 'Session expires too early on Safari' }).locator('.chip.static', { hasText: '4' })).toBeVisible();
 });
+
+test('done tasks from past months wait in the archive', async ({ page }) => {
+  await login(page);
+  await page.goto('/p/WEB/board');
+  // The Done column keeps this month's work; what was finished in earlier months is in the archive.
+  await expect(column(page, 'Done').locator('.card', { hasText: 'Export reports to CSV' })).toBeVisible();
+  await expect(page.locator('.card', { hasText: 'Set up error tracking' })).toHaveCount(0);
+
+  await page.locator('.page-header .tab', { hasText: 'Archive' }).click();
+  await expect(page).toHaveURL(/\/p\/WEB\/archive$/);
+  const row = page.locator('.row', { hasText: 'Set up error tracking' });
+  await expect(row).toBeVisible();
+  await expect(page.locator('.group', { has: row }).locator('.group-name')).toHaveText(/^[A-Z][a-z]+ \d{4}$/);
+  await expect(page.locator('.row', { hasText: 'Flaky sign-in test on CI' })).toBeVisible();
+  await expect(page.locator('.row', { hasText: 'Export reports to CSV' })).toHaveCount(0);
+
+  // An archived task says so; reopening it brings it back to the board.
+  await row.click();
+  await expect(page.locator('.panel .panel-title')).toHaveValue('Set up error tracking');
+  await expect(page.locator('.panel-meta')).toContainText('archived');
+  await expect(page.locator('.timeline .activity', { hasText: 'Moved to the archive' })).toBeVisible();
+  await page.keyboard.press('s');
+  await page.locator('.picker-input').fill('in progress');
+  await page.keyboard.press('Enter');
+  await expect(row).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.locator('.page-header .tab', { hasText: 'Board' }).click();
+  await expect(column(page, 'In Progress').locator('.card', { hasText: 'Set up error tracking' })).toBeVisible();
+  await page.reload();
+  await expect(column(page, 'In Progress').locator('.card', { hasText: 'Set up error tracking' })).toBeVisible();
+});
