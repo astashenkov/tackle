@@ -24,7 +24,7 @@ export function MyTasks() {
   const user = me.value!;
   const all = taskList.value;
   const mine = useMemo(
-    () => all.filter((x) => projects.value[x.projectId] && !projects.value[x.projectId].archived && x[TAB_FIELD[tab]] === user.id),
+    () => all.filter((x) => projects.value[x.projectId] && !projects.value[x.projectId].archived && !x.archivedAt && x[TAB_FIELD[tab]] === user.id),
     [all, tab, user.id],
   );
   const ctx = viewContext();

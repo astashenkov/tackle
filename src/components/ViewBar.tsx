@@ -98,6 +98,7 @@ export function ViewBar({
   groupOptions,
   hideGrouping = false,
   fields = ['statuses', 'assignees', 'reviewers', 'priorities', 'labels', 'sprints'],
+  display = true,
   children,
 }: {
   state: ViewState;
@@ -106,6 +107,8 @@ export function ViewBar({
   groupOptions: GroupBy[];
   hideGrouping?: boolean;
   fields?: FilterField[];
+  /** Show the Display menu (grouping, ordering, completed tasks). */
+  display?: boolean;
   children?: ComponentChildren;
 }) {
   const { filters } = state;
@@ -200,10 +203,12 @@ export function ViewBar({
       )}
       <span class="grow" />
       {children}
-      <button class="btn ghost sm" onClick={(e) => openDisplay(e.currentTarget)}>
-        <SlidersHorizontal size={14} />
-        <span class="hide-sm">{t('display.title')}</span>
-      </button>
+      {display && (
+        <button class="btn ghost sm" onClick={(e) => openDisplay(e.currentTarget)}>
+          <SlidersHorizontal size={14} />
+          <span class="hide-sm">{t('display.title')}</span>
+        </button>
+      )}
     </div>
   );
 }

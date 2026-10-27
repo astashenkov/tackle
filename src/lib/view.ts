@@ -41,13 +41,11 @@ export interface ViewContext {
   now: number;
 }
 
-/** Closed tasks older than this are hidden in "recent" mode so boards don't grow forever. */
+/**
+ * Canceled tasks older than this are hidden in "recent" mode so boards don't grow forever.
+ * Done tasks stay until they are moved to the archive on the 1st of the next month.
+ */
 export const RECENT_MS = 14 * 86_400_000;
-
-const isClosed = (t: Task, ctx: ViewContext) => {
-  const s = ctx.statuses[t.statusId];
-  return !!s && CLOSED_CATEGORIES.has(s.category);
-};
 
 export function matchesQuery(t: Task, q: string, ctx: ViewContext): boolean {
   if (!q) return true;
@@ -65,9 +63,10 @@ export function matchesQuery(t: Task, q: string, ctx: ViewContext): boolean {
 export function filterTasks(tasks: Task[], f: Filters, d: Pick<Display, 'completed'>, ctx: ViewContext): Task[] {
   const active = ctx.sprints.filter((s) => s.state === 'active').map((s) => s.id);
   return tasks.filter((t) => {
-    if (isClosed(t, ctx)) {
+    const category = ctx.statuses[t.statusId]?.category;
+    if (category && CLOSED_CATEGORIES.has(category)) {
       if (d.completed === 'none') return false;
-      if (d.completed === 'recent' && t.completedAt && ctx.now - t.completedAt > RECENT_MS) return false;
+      if (d.completed === 'recent' && category === 'canceled' && t.completedAt && ctx.now - t.completedAt > RECENT_MS) return false;
     }
     if (f.statuses.length && !f.statuses.includes(t.statusId)) return false;
     if (f.assignees.length && !f.assignees.includes(t.assigneeId ?? 'none')) return false;
@@ -105,7 +104,7 @@ export function sortTasks(tasks: Task[], orderBy: OrderBy): Task[] {
 
 export interface Group {
   key: string;
-  kind: GroupBy;
+  kind: GroupBy | 'month';
   /** The patch that moves a task into this group (used by drag and drop and inline create). */
   patch: TaskPatch | null;
   tasks: Task[];
@@ -147,6 +146,27 @@ export function groupTasks(tasks: Task[], groupBy: GroupBy, ctx: ViewContext, sh
     }
   }
   return showEmpty ? groups : groups.filter((g) => g.tasks.length > 0);
+}
+
+/** When a task was finished (tasks whose status was re-categorized may have no completion time). */
+const finishedAt = (t: Task) => t.completedAt ?? t.updatedAt;
+
+/** The month a task was finished in, as YYYY-MM in local time. */
+function finishedMonth(t: Task): string {
+  const d = new Date(finishedAt(t));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Groups archived tasks by the month they were finished in: newest month first, latest task first. */
+export function groupByMonth(tasks: Task[]): Group[] {
+  const groups = new Map<string, Group>();
+  for (const t of [...tasks].sort((a, b) => finishedAt(b) - finishedAt(a))) {
+    const key = finishedMonth(t);
+    let group = groups.get(key);
+    if (!group) groups.set(key, (group = { key, kind: 'month', patch: null, tasks: [] }));
+    group.tasks.push(t);
+  }
+  return [...groups.values()];
 }
 
 /** Position for a task dropped right before `beforeId` (or at the end) in an ordered list. */

@@ -220,6 +220,8 @@ export function updateTask(ctx: Ctx, user: User, taskId: string, p: TaskPatch, o
       if ((to === 'started' || CLOSED_CATEGORIES.has(to)) && !before.startedAt) set('started_at', t);
       if (CLOSED_CATEGORIES.has(to) && !CLOSED_CATEGORIES.has(from)) set('completed_at', t);
       if (!CLOSED_CATEGORIES.has(to)) set('completed_at', null);
+      // A task taken out of Done comes back from the archive to the board.
+      if (before.archivedAt && to !== 'completed') set('archived_at', null);
       recordActivity(ctx, taskId, user.id, 'status', { from: before.statusId, to: p.statusId });
       statusChanged = true;
       meaningful = true;

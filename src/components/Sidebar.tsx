@@ -1,4 +1,4 @@
-import { ChevronRight, Columns3, Inbox, List, LogOut, Moon, Plus, Search, Settings, SquarePen, Sun, Timer, User as UserIcon, Monitor, Keyboard } from 'lucide-preact';
+import { Archive, ChevronRight, Columns3, Inbox, List, LogOut, Moon, Plus, Search, Settings, SquarePen, Sun, Timer, User as UserIcon, Monitor, Keyboard } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { keyLabel } from '../lib/hotkeys';
 import { t } from '../lib/i18n';
@@ -102,6 +102,7 @@ export function Sidebar() {
                       label={sprint ? `${t('view.sprints')} · ${sprint.name}` : t('view.sprints')}
                       active={here && r.view === 'sprints'}
                     />
+                    <NavItem href={`/p/${p.key}/archive`} icon={<Archive size={15} />} label={t('view.archive')} active={here && r.view === 'archive'} />
                   </div>
                 )}
               </div>

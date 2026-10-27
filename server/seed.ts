@@ -262,6 +262,15 @@ Related: WEB-14. cc @maria`,
   add('MOB', { title: 'Biometric login', s: 'Backlog', p: 3, l: ['Feature'], e: 3 });
   add('MOB', { title: 'Reduce app bundle size', s: 'Backlog', p: 4, l: ['Tech debt'], e: 3 });
 
+  // Finished in earlier months: the server moves these to the archive when it starts.
+  for (const [title, a, e, l, done] of [
+    ['Set up error tracking', 'dan', 2, ['Tech debt'], -38],
+    ['Pricing page for the marketing site', 'sofia', 3, ['Design'], -45],
+    ['Password reset emails', 'ivan', 2, ['Feature', 'Backend'], -52],
+    ['Flaky sign-in test on CI', 'maria', 1, ['Bug'], -64],
+  ] as const) add('WEB', { title, s: 'Done', a, e, l: [...l], p: 3, done });
+  add('MOB', { title: 'App Store screenshots', s: 'Done', p: 3, a: 'sofia', e: 2, l: ['Design'], done: -41 });
+
   // Comments & notifications on the headline task
   const headline = taskIds['WEB-10'];
   const comments: [string, string, number][] = [

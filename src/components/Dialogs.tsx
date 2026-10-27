@@ -306,6 +306,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
       ['g b', 'view.board'],
       ['g l', 'view.list'],
       ['g s', 'view.sprints'],
+      ['g a', 'view.archive'],
       ['g ,', 'nav.settings'],
     ],
   ],

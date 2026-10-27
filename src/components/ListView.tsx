@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { ChevronRight, Plus } from 'lucide-preact';
 import type { Priority, Task } from '../../shared/types';
+import { formatMonth } from '../lib/date';
 import { t, priorityName, sprintLabel } from '../lib/i18n';
 import { useDnd } from '../lib/dnd';
 import { positionBetween, type Group, type OrderBy } from '../lib/view';
@@ -53,6 +54,7 @@ export function GroupLabel({ group }: { group: Group }) {
       </>
     );
   }
+  if (kind === 'month') return <span class="group-name">{formatMonth(key)}</span>;
   if (kind === 'label') {
     const l = key === 'none' ? null : labels.value[key];
     return (

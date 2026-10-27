@@ -69,6 +69,7 @@ const ru: Record<Key, Entry> = {
   'view.board': 'Доска',
   'view.list': 'Список',
   'view.sprints': 'Спринты',
+  'view.archive': 'Архив',
 
   'conn.reconnecting': 'Переподключение…',
 
@@ -120,6 +121,7 @@ const ru: Record<Key, Entry> = {
   'task.notFound': 'Задача {ref} не найдена. Возможно, её удалили.',
   'task.createdBy': '{name} создал(а) задачу {time}',
   'task.updated': 'обновлена {time}',
+  'task.archived': 'в архиве с {date}',
 
   'comment.placeholder': 'Оставьте комментарий…',
   'comment.hint': 'Markdown и @упоминания · ⌘↵ — отправить',
@@ -162,6 +164,7 @@ const ru: Record<Key, Entry> = {
   'activity.attachmentsRemovedAnd': ' и удалил(а) {files}',
   'activity.deleted': '{actor} удалил(а) задачу',
   'activity.restored': '{actor} восстановил(а) задачу',
+  'activity.archived': 'Задача перенесена в архив',
 
   'picker.status': 'Сменить статус…',
   'picker.priority': 'Приоритет…',
@@ -212,6 +215,9 @@ const ru: Record<Key, Entry> = {
   'empty.createdTitle': 'Вы ещё не создали ни одной задачи',
   'empty.reviewTitle': 'Нет задач на ревью',
   'empty.myText': 'Задачи появятся здесь, как только их назначат на вас, отправят вам на ревью или вы их создадите.',
+
+  'archive.emptyTitle': 'В архиве пока пусто',
+  'archive.emptyText': 'Выполненные задачи переносятся сюда 1-го числа каждого месяца, поэтому на доске остаётся только сделанное за текущий месяц.',
 
   'my.assigned': 'Назначенные',
   'my.review': 'На ревью',

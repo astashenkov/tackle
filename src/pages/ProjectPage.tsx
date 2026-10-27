@@ -14,10 +14,11 @@ import { openCreateTask } from '../components/CreateTask';
 import { openProjectDialog } from '../components/Dialogs';
 import { openPicker } from '../components/Picker';
 import { confirm } from '../components/Modal';
+import { ArchivePage } from './ArchivePage';
 import { SprintsPage } from './SprintsPage';
 import { NotFound } from './NotFound';
 
-export type ProjectView = 'board' | 'list' | 'sprints';
+export type ProjectView = 'board' | 'list' | 'sprints' | 'archive';
 
 export function ProjectTabs({ project, view }: { project: Project; view: ProjectView }) {
   const tab = (v: ProjectView, icon: preact.ComponentChildren, label: string) => (
@@ -31,6 +32,7 @@ export function ProjectTabs({ project, view }: { project: Project; view: Project
       {tab('board', <Columns3 size={14} />, t('view.board'))}
       {tab('list', <List size={14} />, t('view.list'))}
       {tab('sprints', <Timer size={14} />, t('view.sprints'))}
+      {tab('archive', <Archive size={14} />, t('view.archive'))}
     </>
   );
 }
@@ -88,6 +90,7 @@ export function ProjectPage({ projectKey, view }: { projectKey: string; view: Pr
   const project = projectsByKey.value[projectKey];
   if (!project) return <NotFound />;
   if (view === 'sprints') return <SprintsPage project={project} />;
+  if (view === 'archive') return <ArchivePage project={project} />;
   return <TasksView project={project} view={view} />;
 }
 
@@ -95,8 +98,10 @@ function TasksView({ project, view }: { project: Project; view: 'board' | 'list'
   const [state, update] = useViewState(`${project.id}:${view}`, DEFAULTS[view]);
   const all = taskList.value;
   const projectTasks = useMemo(() => all.filter((x) => x.projectId === project.id), [all, project.id]);
+  // Done tasks from past months live in the archive, not here.
+  const current = useMemo(() => projectTasks.filter((x) => !x.archivedAt), [projectTasks]);
   const ctx = viewContext(project.id);
-  const filtered = filterTasks(projectTasks, state.filters, state.display, ctx);
+  const filtered = filterTasks(current, state.filters, state.display, ctx);
   const sorted = sortTasks(filtered, state.display.orderBy);
   const groupBy: GroupBy = view === 'board' ? 'status' : state.display.groupBy;
   const groups = groupTasks(sorted, groupBy, ctx, view === 'board' ? true : state.display.showEmpty);
