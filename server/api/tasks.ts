@@ -1,6 +1,7 @@
 import type { Hono } from 'hono';
 import { CLOSED_CATEGORIES, extractMentions } from '../../shared/constants';
 import type { Activity, ActivityKind, Priority, StatusCategory, Task, TaskPatch, User } from '../../shared/types';
+import { archiveTasks } from '../archive';
 import type { AppEnv } from '../auth';
 import { loadTask, toActivity, toComment } from '../db';
 import { notify, usersByHandles, watchers, type Ctx } from '../notify';
@@ -354,6 +355,11 @@ export function taskRoutes(api: Hono<AppEnv>, ctx: Ctx) {
   api.post('/tasks/delete', async (c) => {
     const ids = idList(asBody(await c.req.json()).ids, 'ids', 500);
     return c.json({ deleted: setDeleted(ctx, c.get('user'), ids, true, c.get('clientId')) });
+  });
+
+  api.post('/tasks/archive', async (c) => {
+    const ids = idList(asBody(await c.req.json()).ids, 'ids', 1000);
+    return c.json(archiveTasks(ctx, c.get('user'), ids, c.get('clientId')));
   });
 
   api.post('/tasks/restore', async (c) => {

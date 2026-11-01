@@ -24,7 +24,7 @@ Tackle is a lightweight issue tracker built for small teams and early-stage star
 
 **Views** — Kanban board with drag and drop (mouse and touch), list view grouped by status, assignee, priority, sprint or label, *My tasks* (assigned, to review, created) across all projects. Filters (status, assignee, reviewer, priority, label, sprint, text) and display options are remembered per view.
 
-**Archive** — on the 1st of every month done tasks move to the project's *Archive*, grouped by the month they were finished in, so the Done column only shows this month's work. Tasks of a running sprint wait until the sprint is completed; reopening an archived task brings it back to the board. Canceled tasks are tucked away from boards after two weeks.
+**Archive** — on the 1st of every month done tasks move to the project's *Archive*, grouped by the month they were finished in, so the Done column only shows this month's work (sprint charts still count archived tasks). The archive button on the Done column moves its tasks there right away; reopening an archived task brings it back to the board. Canceled tasks are tucked away from boards after two weeks.
 
 **Sprints** — plan by dragging tasks between sprints and the backlog, start a sprint, track progress and a burndown chart, complete it and carry unfinished work over to the next sprint (or a new one, or the backlog) in one step.
 

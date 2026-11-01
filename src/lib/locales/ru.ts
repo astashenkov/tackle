@@ -165,6 +165,7 @@ const ru: Record<Key, Entry> = {
   'activity.deleted': '{actor} удалил(а) задачу',
   'activity.restored': '{actor} восстановил(а) задачу',
   'activity.archived': 'Задача перенесена в архив',
+  'activity.archivedBy': '{actor} перенёс(ла) задачу в архив',
 
   'picker.status': 'Сменить статус…',
   'picker.priority': 'Приоритет…',
@@ -218,6 +219,9 @@ const ru: Record<Key, Entry> = {
 
   'archive.emptyTitle': 'В архиве пока пусто',
   'archive.emptyText': 'Выполненные задачи переносятся сюда 1-го числа каждого месяца, поэтому на доске остаётся только сделанное за текущий месяц.',
+  'archive.move': 'Перенести в архив',
+  'archive.confirmTitle': { one: 'Перенести {count} задачу в архив?', few: 'Перенести {count} задачи в архив?', many: 'Перенести {count} задач в архив?', other: 'Перенести {count} задачи в архив?' },
+  'archive.confirmText': 'Они будут в разделе «Архив» проекта. Если сменить задаче статус, она вернётся на доску.',
 
   'my.assigned': 'Назначенные',
   'my.review': 'На ревью',
@@ -345,6 +349,7 @@ const ru: Record<Key, Entry> = {
   'toast.branchCopied': 'Имя ветки скопировано',
   'toast.copied': 'Скопировано',
   'toast.saved': 'Сохранено',
+  'toast.archived': { one: '{count} задача перенесена в архив', few: '{count} задачи перенесены в архив', many: '{count} задач перенесено в архив', other: '{count} задачи перенесены в архив' },
 
   'error.network': 'Нет связи с сервером. Проверьте подключение.',
   'error.generic': 'Что-то пошло не так',

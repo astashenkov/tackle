@@ -331,7 +331,7 @@ function describeActivity(a: Activity): ComponentChildren {
     case 'restored':
       return tx('activity.restored', { actor });
     case 'archived':
-      return t('activity.archived');
+      return a.actorId ? tx('activity.archivedBy', { actor }) : t('activity.archived');
   }
 }
 

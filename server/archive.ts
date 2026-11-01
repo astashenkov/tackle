@@ -1,3 +1,4 @@
+import type { Task, User } from '../shared/types';
 import { loadTask } from './db';
 import type { Ctx } from './notify';
 import { now } from './util';
@@ -16,38 +17,57 @@ export function nextMonthStart(at: number): number {
   return new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
 }
 
+function moveToArchive(ctx: Ctx, ids: string[], actorId: string | null, at: number, origin = '') {
+  const { db, hub } = ctx;
+  for (const taskId of ids) {
+    db.run('UPDATE tasks SET archived_at = ? WHERE id = ?', at, taskId);
+    db.run("INSERT INTO activity (task_id, actor_id, kind, data, created_at) VALUES (?, ?, 'archived', '{}', ?)", taskId, actorId, at);
+    hub.broadcast({ type: 'task.upsert', data: loadTask(db, taskId)! }, origin);
+  }
+}
+
 /**
  * Moves done tasks to the archive once the month they were finished in is over, so the Done
- * column only holds this month's work. Tasks of a running sprint stay on the board until the
- * sprint is completed. Returns the ids of the archived tasks.
+ * column only holds this month's work. Returns the ids of the archived tasks.
  */
 export function archiveDoneTasks(ctx: Ctx, at = now()): string[] {
-  const { db, hub } = ctx;
+  const { db } = ctx;
   return db.tx(() => {
     const ids = db
       .all<{ id: string }>(
-        `SELECT t.id FROM tasks t
-         JOIN statuses s ON s.id = t.status_id
-         LEFT JOIN sprints sp ON sp.id = t.sprint_id
+        `SELECT t.id FROM tasks t JOIN statuses s ON s.id = t.status_id
          WHERE s.category = 'completed' AND t.archived_at IS NULL AND t.deleted_at IS NULL
-           AND COALESCE(t.completed_at, t.updated_at) < ? AND (sp.state IS NULL OR sp.state != 'active')
+           AND COALESCE(t.completed_at, t.updated_at) < ?
          ORDER BY t.completed_at`,
         monthStart(at),
       )
       .map((r) => r.id);
-    for (const taskId of ids) {
-      db.run('UPDATE tasks SET archived_at = ? WHERE id = ?', at, taskId);
-      // Nobody did this by hand, so the history entry has no actor.
-      db.run("INSERT INTO activity (task_id, actor_id, kind, data, created_at) VALUES (?, NULL, 'archived', '{}', ?)", taskId, at);
-      hub.broadcast({ type: 'task.upsert', data: loadTask(db, taskId)! });
-    }
+    // Nobody did this by hand, so the history entries have no actor.
+    moveToArchive(ctx, ids, null, at);
     return ids;
+  });
+}
+
+/** Moves the given tasks to the archive right away, however recently they were finished. Only done tasks move. */
+export function archiveTasks(ctx: Ctx, user: User, ids: string[], origin = ''): Task[] {
+  const { db } = ctx;
+  return db.tx(() => {
+    const done = ids.filter((taskId) =>
+      db.get(
+        `SELECT 1 FROM tasks t JOIN statuses s ON s.id = t.status_id
+         WHERE t.id = ? AND s.category = 'completed' AND t.archived_at IS NULL AND t.deleted_at IS NULL`,
+        taskId,
+      ),
+    );
+    moveToArchive(ctx, done, user.id, now(), origin);
+    return done.map((taskId) => loadTask(db, taskId)!);
   });
 }
 
 /**
  * Archives right away (catching up on a 1st the server was down for), then again as each month
- * begins. It also wakes up hourly, which picks up a sprint's tasks soon after the sprint is completed.
+ * begins. It also wakes up hourly, which picks up last month's tasks that come back later
+ * (restored after deletion) and keeps working if the clock or time zone changes.
  */
 export function scheduleArchive(ctx: Ctx): () => void {
   let timer: ReturnType<typeof setTimeout>;
