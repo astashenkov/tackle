@@ -156,6 +156,22 @@ export async function deleteTasks(ids: ID[]) {
   }
 }
 
+/** Moves done tasks to the archive right away instead of waiting for the 1st. */
+export async function archiveTasks(ids: ID[]) {
+  const before = ids.map((id) => tasks.value[id]).filter(Boolean);
+  if (!before.length) return;
+  putMany(tasks, before.map((tk) => ({ ...tk, archivedAt: Date.now() })));
+  try {
+    const archived = await api.post<Task[]>('/tasks/archive', { ids: before.map((tk) => tk.id) });
+    const moved = new Set(archived.map((tk) => tk.id));
+    putMany(tasks, [...archived, ...before.filter((tk) => !moved.has(tk.id) && tasks.value[tk.id])]);
+    toast(t('toast.archived', { count: archived.length }));
+  } catch (err) {
+    putMany(tasks, before.filter((tk) => tasks.value[tk.id]));
+    reportError(err);
+  }
+}
+
 async function restoreTasks(removed: Task[]) {
   putMany(tasks, removed);
   try {

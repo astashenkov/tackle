@@ -4,9 +4,9 @@ import type { Project, Task } from '../../shared/types';
 import { t } from '../lib/i18n';
 import { navigate } from '../lib/router';
 import { filterTasks, groupTasks, sortTasks, type Display, type GroupBy } from '../lib/view';
-import { activeSprint, projectsByKey, taskList } from '../store/data';
+import { activeSprint, projectsByKey, statuses, taskList } from '../store/data';
 import { saveProject } from '../store/actions';
-import { Board } from '../components/Board';
+import { ArchiveButton, Board } from '../components/Board';
 import { ListView } from '../components/ListView';
 import { EmptyState, PageHeader, viewContext } from '../components/PageHeader';
 import { useViewState, ViewBar } from '../components/ViewBar';
@@ -137,6 +137,9 @@ function TasksView({ project, view }: { project: Project; view: 'board' | 'list'
             defaults={defaults}
             viewKey={`${project.id}:list:${groupBy}`}
             showSprint={groupBy !== 'sprint'}
+            renderGroupActions={(g) =>
+              g.kind === 'status' && statuses.value[g.key]?.category === 'completed' && g.tasks.length > 0 ? <ArchiveButton ids={g.tasks.map((x) => x.id)} /> : null
+            }
           />
           {!filtered.length && <div class="no-results">{t('empty.noMatches')}</div>}
         </div>

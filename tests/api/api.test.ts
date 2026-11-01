@@ -603,18 +603,39 @@ describe('archive', () => {
     assert.deepEqual(archiveDoneTasks(ctx, nextMonthStart(redone.completedAt!)), [task.id]);
   });
 
-  test('tasks of a running sprint wait until the sprint is completed', async () => {
+  test('the whole Done column goes, running sprints included; the sprint still counts its work', async () => {
     const p = snap.projects[0].id;
-    const sprint = (await admin.post<Sprint>('/sprints', { projectId: p, startDate: '2026-10-19', endDate: '2026-11-01' })).data;
+    const sprint = (await admin.post<Sprint>('/sprints', { projectId: p, startDate: '2026-10-19', endDate: '2026-11-08' })).data;
     await admin.post(`/sprints/${sprint.id}/start`);
     const inSprint = await doneTask('Sprint work', at(2026, 10, 25), { sprintId: sprint.id, estimate: 3 });
-    const outside = await doneTask('Other work', at(2026, 10, 25));
+    const outside = await doneTask('Other work', at(2026, 10, 26));
 
-    assert.deepEqual(archiveDoneTasks(ctx, at(2026, 11, 1)), [outside.id]);
+    assert.deepEqual(archiveDoneTasks(ctx, at(2026, 11, 1)), [inSprint.id, outside.id]);
+    assert.equal((await synced(inSprint.id)).sprintId, sprint.id, 'archived work stays in its sprint');
     const res = await admin.post(`/sprints/${sprint.id}/complete`, { moveTo: 'backlog' });
     assert.deepEqual(res.data.sprint.stats, { total: 1, completed: 1, points: 3, completedPoints: 3 });
-    assert.deepEqual(archiveDoneTasks(ctx, at(2026, 11, 2)), [inSprint.id]);
-    assert.equal((await synced(inSprint.id)).sprintId, sprint.id, 'archived work stays in its sprint');
+  });
+
+  test('anyone can move done tasks to the archive right away', async () => {
+    const maria = await invite('Maria', 'maria@example.com');
+    const today = await doneTask('Finished today', Date.now());
+    const earlier = await doneTask('Finished earlier', Date.now() - 60_000);
+    const open = (await admin.post<Task>('/tasks', { projectId: snap.projects[0].id, title: 'Still going', statusId: status('In Progress') })).data;
+    const events: { type: string; origin: string; data: Task }[] = [];
+    hub.add({ userId: 'observer', clientId: 'observer', send: (p) => events.push(JSON.parse(p)) });
+
+    const res = await maria.req<Task[]>('POST', '/tasks/archive', { ids: [today.id, earlier.id, open.id, 'missingTask0001'] }, { 'x-client-id': 'tab-1' });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.data.map((x) => x.id), [today.id, earlier.id], 'only done tasks move');
+    assert.ok(res.data.every((x) => x.archivedAt));
+    assert.equal((await synced(open.id)).archivedAt, null);
+    assert.deepEqual(events.map((e) => [e.type, e.data.id, e.origin]), [['task.upsert', today.id, 'tab-1'], ['task.upsert', earlier.id, 'tab-1']]);
+    const mariaId = (await maria.get<Snapshot>('/sync')).data.me.id;
+    const { activity } = (await admin.get<{ activity: Activity[] }>(`/tasks/${today.id}/timeline`)).data;
+    assert.deepEqual(activity.map((a) => [a.kind, a.actorId]), [['created', snap.me.id], ['archived', mariaId]]);
+
+    assert.deepEqual((await admin.post<Task[]>('/tasks/archive', { ids: [today.id] })).data, [], 'already archived');
+    assert.equal((await admin.post('/tasks/archive', { ids: ['../etc'] })).status, 400);
   });
 
   const archivedTitles = () => loadAllTasks(ctx.db).filter((x) => x.archivedAt).map((x) => x.title).sort();
@@ -633,17 +654,16 @@ describe('archive', () => {
     stop();
   });
 
-  test('the server archives a sprint’s done tasks within an hour of completing it', async (t) => {
-    const sprint = (await admin.post<Sprint>('/sprints', { projectId: snap.projects[0].id, startDate: '2026-10-19', endDate: '2026-11-08' })).data;
-    await admin.post(`/sprints/${sprint.id}/start`);
-    await doneTask('Sprint work', at(2026, 10, 30), { sprintId: sprint.id });
+  test('the server archives last month’s work that comes back later within the hour', async (t) => {
+    const task = await doneTask('Deleted in October', at(2026, 10, 20));
+    await admin.post('/tasks/delete', { ids: [task.id] });
 
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: at(2026, 11, 10, 9) });
     const stop = scheduleArchive(ctx);
     assert.deepEqual(archivedTitles(), []);
-    await admin.post(`/sprints/${sprint.id}/complete`, { moveTo: 'backlog' });
+    await admin.post('/tasks/restore', { ids: [task.id] });
     t.mock.timers.tick(HOUR);
-    assert.deepEqual(archivedTitles(), ['Sprint work']);
+    assert.deepEqual(archivedTitles(), ['Deleted in October']);
     stop();
   });
 });

@@ -152,20 +152,21 @@ test('sprint planning by drag and drop', async ({ page }) => {
 
 test('edit the description with markdown checklists', async ({ page }) => {
   await login(page);
-  await page.goto('/p/WEB/list?task=WEB-20');
-  await expect(page.locator('.panel .panel-title')).toHaveValue('Export reports to CSV');
+  // An open task: done ones from last month are in the archive on the first days of a month.
+  await page.goto('/p/WEB/list?task=WEB-17');
+  await expect(page.locator('.panel .panel-title')).toHaveValue('Saved filters on the reports page');
   await page.locator('.panel .description').click();
   // The editor takes focus right after it mounts; typing earlier would trigger shortcuts.
   await expect(page.locator('.panel .description textarea')).toBeFocused();
-  await page.keyboard.type('Steps:\n\n- [ ] Pick columns\n- [ ] Add download button');
+  await page.keyboard.type('Steps:\n\n- [ ] Save the filters\n- [ ] List saved filters');
   await page.keyboard.press('Escape');
   const boxes = page.locator('.panel .description input[type=checkbox]');
   await expect(boxes).toHaveCount(2);
   await boxes.first().click();
-  await expect(page.locator('.panel .description li.done')).toHaveText('Pick columns');
+  await expect(page.locator('.panel .description li.done')).toHaveText('Save the filters');
   await page.reload();
-  await expect(page.locator('.panel .description li.done')).toHaveText('Pick columns');
-  await expect(page.locator('.row', { hasText: 'Export reports to CSV' }).locator('.chip.static', { hasText: '/' })).toHaveText('1/2');
+  await expect(page.locator('.panel .description li.done')).toHaveText('Save the filters');
+  await expect(page.locator('.row', { hasText: 'Saved filters on the reports page' }).locator('.chip.static', { hasText: '/' })).toHaveText('1/2');
 });
 
 test('ask a teammate for review and attach files', async ({ page, browser }) => {
@@ -277,8 +278,7 @@ test('paste and drop files, refuse big ones, use the command menu', async ({ pag
 test('done tasks from past months wait in the archive', async ({ page }) => {
   await login(page);
   await page.goto('/p/WEB/board');
-  // The Done column keeps this month's work; what was finished in earlier months is in the archive.
-  await expect(column(page, 'Done').locator('.card', { hasText: 'Export reports to CSV' })).toBeVisible();
+  await expect(page.locator('.board')).toBeVisible();
   await expect(page.locator('.card', { hasText: 'Set up error tracking' })).toHaveCount(0);
 
   await page.locator('.page-header .tab', { hasText: 'Archive' }).click();
@@ -287,7 +287,6 @@ test('done tasks from past months wait in the archive', async ({ page }) => {
   await expect(row).toBeVisible();
   await expect(page.locator('.group', { has: row }).locator('.group-name')).toHaveText(/^[A-Z][a-z]+ \d{4}$/);
   await expect(page.locator('.row', { hasText: 'Flaky sign-in test on CI' })).toBeVisible();
-  await expect(page.locator('.row', { hasText: 'Export reports to CSV' })).toHaveCount(0);
 
   // An archived task says so; reopening it brings it back to the board.
   await row.click();
@@ -298,9 +297,28 @@ test('done tasks from past months wait in the archive', async ({ page }) => {
   await page.locator('.picker-input').fill('in progress');
   await page.keyboard.press('Enter');
   await expect(row).toHaveCount(0);
-  await page.keyboard.press('Escape');
   await page.locator('.page-header .tab', { hasText: 'Board' }).click();
-  await expect(column(page, 'In Progress').locator('.card', { hasText: 'Set up error tracking' })).toBeVisible();
+  const card = column(page, 'In Progress').locator('.card', { hasText: 'Set up error tracking' });
+  await expect(card).toBeVisible();
+
+  // Done again today, it stays in the Done column until someone archives the column by hand.
+  await card.click();
+  await expect(page.locator('.panel .panel-title')).toHaveValue('Set up error tracking');
+  await page.keyboard.press('s');
+  await page.locator('.picker-input').fill('done');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  const done = column(page, 'Done');
+  await expect(done.locator('.card', { hasText: 'Set up error tracking' })).toBeVisible();
+  await done.locator('button[title="Move to the archive"]').click();
+  await expect(page.locator('.modal')).toContainText('to the archive?');
+  await page.locator('.modal button.primary').click();
+  await expect(page.locator('.toast', { hasText: 'moved to the archive' })).toBeVisible();
+  await expect(done.locator('.card')).toHaveCount(0);
   await page.reload();
-  await expect(column(page, 'In Progress').locator('.card', { hasText: 'Set up error tracking' })).toBeVisible();
+  await expect(column(page, 'Done').locator('.column-empty')).toBeVisible();
+
+  await page.locator('.page-header .tab', { hasText: 'Archive' }).click();
+  await row.click();
+  await expect(page.locator('.timeline .activity', { hasText: 'moved the task to the archive' })).toContainText('Alex Morgan');
 });

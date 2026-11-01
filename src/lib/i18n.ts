@@ -169,6 +169,7 @@ const en = {
   'activity.deleted': '{actor} deleted the task',
   'activity.restored': '{actor} restored the task',
   'activity.archived': 'Moved to the archive',
+  'activity.archivedBy': '{actor} moved the task to the archive',
 
   'picker.status': 'Change status…',
   'picker.priority': 'Set priority…',
@@ -222,6 +223,9 @@ const en = {
 
   'archive.emptyTitle': 'Nothing archived yet',
   'archive.emptyText': 'Done tasks move here on the 1st of every month, so the board only shows what was finished this month.',
+  'archive.move': 'Move to the archive',
+  'archive.confirmTitle': { one: 'Move {count} task to the archive?', other: 'Move {count} tasks to the archive?' },
+  'archive.confirmText': 'You’ll find them in the project’s Archive. Changing a task’s status brings it back to the board.',
 
   'my.assigned': 'Assigned',
   'my.review': 'To review',
@@ -334,6 +338,7 @@ const en = {
   'toast.branchCopied': 'Branch name copied',
   'toast.copied': 'Copied',
   'toast.saved': 'Saved',
+  'toast.archived': { one: '{count} task moved to the archive', other: '{count} tasks moved to the archive' },
 
   'error.network': 'Can’t reach the server. Check your connection.',
   'error.generic': 'Something went wrong',
