@@ -377,6 +377,22 @@ export function taskRoutes(api: Hono<AppEnv>, ctx: Ctx) {
     });
   });
 
+  /**
+   * Every task's comments and activity in one go, oldest first: what integrations need to answer
+   * questions about the work (who moved what, who said what) without a request per task.
+   * Deleted tasks are left out, as everywhere else.
+   */
+  api.get('/history', (c) =>
+    c.json({
+      comments: db
+        .all('SELECT c.* FROM comments c JOIN tasks t ON t.id = c.task_id WHERE t.deleted_at IS NULL ORDER BY c.created_at, c.rowid')
+        .map(toComment),
+      activity: db
+        .all('SELECT a.* FROM activity a JOIN tasks t ON t.id = a.task_id WHERE t.deleted_at IS NULL ORDER BY a.id')
+        .map(toActivity),
+    }),
+  );
+
   api.post('/tasks/:id/comments', async (c) => {
     const user = c.get('user');
     const b = asBody(await c.req.json());
