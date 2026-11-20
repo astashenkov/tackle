@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Activity, Attachment, Notification, Snapshot, Sprint, Task } from '../../shared/types';
+import type { Activity, Attachment, Notification, Snapshot, Sprint, Task, TelegramSettings } from '../../shared/types';
 import { createApp } from '../../server/app';
 import { archiveDoneTasks, nextMonthStart, scheduleArchive } from '../../server/archive';
 import fs from 'node:fs';
@@ -54,6 +54,16 @@ class Client {
   }
 }
 
+/** Calls to the fake Telegram Bot API in the current test. */
+let telegramCalls: { url: string; body: any }[];
+/** How the fake Telegram answers the n-th call (1-based); throwing makes the request fail. */
+let telegramReply: (n: number, url: string) => { status: number; body: unknown };
+const fakeTelegram: typeof fetch = async (input, init) => {
+  telegramCalls.push({ url: String(input), body: JSON.parse(String(init!.body)) });
+  const r = telegramReply(telegramCalls.length, String(input));
+  return new Response(JSON.stringify(r.body), { status: r.status, headers: { 'content-type': 'application/json' } });
+};
+
 let app: App;
 let hub: ReturnType<typeof createApp>['hub'];
 let ctx: ReturnType<typeof createApp>['ctx'];
@@ -66,7 +76,15 @@ const status = (name: string) => snap.statuses.find((s) => s.name === name)!.id;
 
 beforeEach(async () => {
   filesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tackle-files-'));
-  ({ app, hub, ctx } = createApp({ db: new DB(':memory:'), attachmentsDir: filesDir, maxUploadBytes: UPLOAD_LIMIT }));
+  telegramCalls = [];
+  telegramReply = () => ({ status: 200, body: { ok: true, result: {} } });
+  ({ app, hub, ctx } = createApp({
+    db: new DB(':memory:'),
+    attachmentsDir: filesDir,
+    maxUploadBytes: UPLOAD_LIMIT,
+    // Messages wait for ctx.telegram.flush(), so tests decide when they go out.
+    telegram: { apiUrl: 'https://telegram.test', delayMs: 60_000, fetch: fakeTelegram },
+  }));
   admin = new Client(app);
   const res = await admin.post('/setup', {
     workspaceName: 'Acme',
@@ -398,6 +416,217 @@ describe('reviewer', () => {
     const bulk = await admin.post<Task[]>('/tasks/bulk', { ids: [t.id, other.id], patch: { reviewerId: ids.alex } });
     assert.deepEqual(bulk.data.map((x) => x.reviewerId), [ids.alex, ids.alex]);
     assert.ok((await admin.get<Snapshot>('/sync')).data.tasks.every((x) => x.reviewerId === ids.alex));
+  });
+});
+
+describe('telegram', () => {
+  const TOKEN = '123456789:AAHfakeTokenForTestsOnly_abcdefgh';
+  const connect = (extra: Record<string, unknown> = {}) =>
+    admin.patch('/telegram', { token: TOKEN, chatId: '-1001234567890', enabled: true, appUrl: 'https://tackle.example.com/', ...extra });
+  /** Messages that went out to the chat since the last call. */
+  const sent = async () => {
+    await ctx.telegram.flush();
+    const texts = telegramCalls.map((c) => c.body.text as string);
+    telegramCalls = [];
+    return texts;
+  };
+
+  test('only admins see the settings, and the bot token never comes back', async () => {
+    const maria = await invite('Maria Petrova', 'maria@example.com');
+    assert.equal((await maria.get('/telegram')).status, 403);
+    assert.equal((await maria.patch('/telegram', { enabled: false })).status, 403);
+    assert.equal((await maria.post('/telegram/test')).status, 403);
+
+    const defaults = (await admin.get<TelegramSettings>('/telegram')).data;
+    assert.equal(defaults.enabled, false);
+    assert.equal(defaults.tokenHint, '');
+    assert.deepEqual(defaults.statusIds, [status('In Review'), status('Done'), status('Canceled')], 'review, done and canceled out of the box');
+
+    assert.equal((await admin.patch('/telegram', { enabled: true })).status, 400, 'nowhere to send yet');
+    assert.equal((await admin.patch('/telegram', { token: 'not a token' })).status, 400);
+    assert.equal((await admin.patch('/telegram', { chatId: 'my group' })).status, 400);
+    assert.equal((await admin.patch('/telegram', { appUrl: 'javascript:alert(1)' })).status, 400);
+    assert.equal((await admin.patch('/telegram', { statusIds: ['nosuchstatus'] })).status, 400);
+    assert.equal((await admin.patch('/telegram', { lang: 'de' })).status, 400);
+
+    const saved = await connect({ lang: 'ru' });
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    assert.deepEqual(saved.data, {
+      enabled: true,
+      tokenHint: 'efgh',
+      chatId: '-1001234567890',
+      statusIds: defaults.statusIds,
+      lang: 'ru',
+      appUrl: 'https://tackle.example.com',
+    });
+    // Saving without a token keeps the one already there.
+    assert.equal((await admin.patch<TelegramSettings>('/telegram', { chatId: '@acme_team' })).data.tokenHint, 'efgh');
+    for (const p of ['/telegram', '/sync', '/export']) {
+      assert.ok(!JSON.stringify((await admin.get(p)).data).includes(TOKEN), `${p} must not reveal the token`);
+    }
+  });
+
+  test('moving a task to review, done or canceled posts the task, its assignee and their comment', async () => {
+    const maria = await invite('Maria Petrova', 'maria@example.com');
+    const ids = Object.fromEntries((await admin.get<Snapshot>('/sync')).data.users.map((u) => [u.handle, u.id]));
+    const p = snap.projects[0].id;
+    await connect();
+
+    const t = (await admin.post<Task>('/tasks', { projectId: p, title: 'Fix login on <Safari>', assigneeId: ids.maria })).data;
+    await maria.post(`/tasks/${t.id}/comments`, { body: 'Old note' });
+    await maria.post(`/tasks/${t.id}/comments`, { body: 'Fixed the cookie & tested it\n![shot.png](/api/attachments/abcdefgh1234)' });
+    await admin.post(`/tasks/${t.id}/comments`, { body: 'Not from the assignee' });
+    await maria.patch(`/tasks/${t.id}`, { statusId: status('In Progress') });
+    assert.deepEqual(await sent(), [], 'In Progress is not on the list');
+
+    await maria.patch(`/tasks/${t.id}`, { statusId: status('In Review') });
+    assert.equal(telegramCalls.length, 0, 'nothing goes out before the delay');
+    await ctx.telegram.flush();
+    assert.equal(telegramCalls.length, 1);
+    const call = telegramCalls[0];
+    assert.equal(call.url, `https://telegram.test/bot${TOKEN}/sendMessage`);
+    assert.equal(call.body.chat_id, '-1001234567890');
+    assert.equal(call.body.parse_mode, 'HTML');
+    assert.deepEqual(
+      (await sent())[0].split('\n'),
+      [
+        '👀 <b>WEB-1</b> → In Review',
+        'Fix login on &lt;Safari&gt;',
+        '',
+        'Assignee: <b>Maria Petrova</b>',
+        'Assignee’s comment:',
+        '<blockquote>Fixed the cookie &amp; tested it',
+        '📎 shot.png</blockquote>',
+        '',
+        'https://tackle.example.com/t/WEB-1',
+      ],
+    );
+
+    // Someone else closing the task is mentioned too.
+    await admin.patch(`/tasks/${t.id}`, { statusId: status('Done') });
+    const [done] = await sent();
+    assert.match(done, /^✅ <b>WEB-1<\/b> → Done\n/);
+    assert.match(done, /\nMoved by: Alex Admin\n/);
+
+    // Whatever is missing is spelled out.
+    const lone = (await admin.post<Task>('/tasks', { projectId: p, title: 'Nobody’s task' })).data;
+    await admin.patch(`/tasks/${lone.id}`, { statusId: status('Canceled') });
+    const [canceled] = await sent();
+    assert.match(canceled, /^🚫 <b>WEB-2<\/b> → Canceled\n/);
+    assert.match(canceled, /\nAssignee: <i>none<\/i>\nMoved by: Alex Admin\nAssignee’s comment: <i>none<\/i>\n/);
+
+    const quiet = (await admin.post<Task>('/tasks', { projectId: p, title: 'No comment', assigneeId: ids.maria })).data;
+    await admin.patch('/telegram', { lang: 'ru', appUrl: '' });
+    await maria.patch(`/tasks/${quiet.id}`, { statusId: status('In Review') });
+    const [ru] = await sent();
+    assert.match(ru, /\nИсполнитель: <b>Maria Petrova<\/b>\nКомментарий исполнителя: <i>нет<\/i>$/, 'no link without an address');
+  });
+
+  test('only a task’s latest move counts, and only the chosen statuses post', async () => {
+    const p = snap.projects[0].id;
+    await connect();
+    const a = (await admin.post<Task>('/tasks', { projectId: p, title: 'A' })).data;
+    const b = (await admin.post<Task>('/tasks', { projectId: p, title: 'B' })).data;
+    const c = (await admin.post<Task>('/tasks', { projectId: p, title: 'C' })).data;
+
+    await admin.patch(`/tasks/${a.id}`, { statusId: status('In Review') });
+    await admin.patch(`/tasks/${a.id}`, { statusId: status('Done') });
+    await admin.patch(`/tasks/${b.id}`, { statusId: status('Done') });
+    await admin.patch(`/tasks/${b.id}`, { statusId: status('In Progress') });
+    await admin.patch(`/tasks/${c.id}`, { statusId: status('Done') });
+    await admin.post('/tasks/delete', { ids: [c.id] });
+    const moved = await sent();
+    assert.equal(moved.length, 1, 'B moved back and C was deleted before their messages went out');
+    assert.match(moved[0], /^✅ <b>WEB-1<\/b> → Done\nA\n/);
+
+    // Bulk moves post one message per task.
+    await admin.post('/tasks/bulk', { ids: [b.id], patch: { statusId: status('Canceled') } });
+    assert.equal((await sent()).length, 1);
+
+    await admin.patch('/telegram', { statusIds: [status('Done')] });
+    await admin.patch(`/tasks/${b.id}`, { statusId: status('In Review') });
+    assert.deepEqual(await sent(), []);
+
+    await admin.patch('/telegram', { enabled: false });
+    await admin.patch(`/tasks/${b.id}`, { statusId: status('Done') });
+    assert.deepEqual(await sent(), []);
+  });
+
+  test('a test message reports what Telegram said; failures in the background never break the board', async (t) => {
+    assert.equal((await admin.post('/telegram/test')).status, 400, 'nothing to test yet');
+    await connect();
+
+    assert.equal((await admin.post('/telegram/test')).status, 200);
+    assert.equal(telegramCalls.length, 1);
+    assert.match(telegramCalls[0].body.text, /Tackle is connected/);
+
+    telegramCalls = [];
+    telegramReply = () => ({ status: 400, body: { ok: false, error_code: 400, description: 'Bad Request: chat not found' } });
+    const failed = await admin.post('/telegram/test');
+    assert.equal(failed.status, 400);
+    assert.equal(failed.data.message, 'Telegram: Bad Request: chat not found');
+
+    // Flood control: wait as long as Telegram asks, then try again.
+    telegramCalls = [];
+    telegramReply = (n) => (n === 1 ? { status: 429, body: { ok: false, description: 'Too Many Requests: retry after 0', parameters: { retry_after: 0 } } } : { status: 200, body: { ok: true } });
+    assert.equal((await admin.post('/telegram/test')).status, 200);
+    assert.equal(telegramCalls.length, 2);
+
+    // Errors never show the token, even when the failure quotes the address.
+    telegramReply = (_n, url) => {
+      throw new Error(`connect ECONNREFUSED ${url}`);
+    };
+    const unreachable = await admin.post('/telegram/test');
+    assert.equal(unreachable.status, 400);
+    assert.ok(!unreachable.data.message.includes(TOKEN), unreachable.data.message);
+
+    // Finding the chat: groups the bot was added to and chats it got messages in, newest first, once each.
+    telegramCalls = [];
+    telegramReply = () => ({
+      status: 200,
+      body: {
+        ok: true,
+        result: [
+          { update_id: 1, message: { message_id: 1, chat: { id: 42, type: 'private', first_name: 'Alex', last_name: 'Admin' }, text: '/start' } },
+          { update_id: 2, my_chat_member: { chat: { id: -1001234567890, type: 'supergroup', title: 'Acme team' } } },
+          { update_id: 3, message: { message_id: 2, chat: { id: -1001234567890, type: 'supergroup', title: 'Acme team' }, text: 'hi' } },
+        ],
+      },
+    });
+    const other = '987654321:AAHanotherBotTokenForTests_xyz';
+    const chats = await admin.post('/telegram/chats', { token: other });
+    assert.equal(chats.status, 200, JSON.stringify(chats.data));
+    assert.deepEqual(chats.data, [
+      { id: '-1001234567890', title: 'Acme team' },
+      { id: '42', title: 'Alex Admin' },
+    ]);
+    assert.equal(telegramCalls[0].url, `https://telegram.test/bot${other}/getUpdates`, 'an unsaved token can be tried');
+    assert.equal((await admin.post('/telegram/chats', {})).status, 200, 'or the saved one');
+    assert.equal(telegramCalls[1].url, `https://telegram.test/bot${TOKEN}/getUpdates`);
+    assert.equal((await admin.post('/telegram/chats', { token: 'nope' })).status, 400);
+
+    // A bot that already serves another program: its chats can't be read, but it can still send.
+    telegramCalls = [];
+    telegramReply = (_n, url) =>
+      url.endsWith('/getUpdates')
+        ? { status: 409, body: { ok: false, error_code: 409, description: 'Conflict: can\'t use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first' } }
+        : { status: 200, body: { ok: true } };
+    const busy = await admin.post('/telegram/chats', {});
+    assert.equal(busy.status, 400);
+    assert.equal(busy.data.error, 'telegram_busy');
+    assert.equal((await admin.post('/telegram/test')).status, 200);
+    assert.deepEqual(telegramCalls.map((c) => c.url.split('/').pop()), ['getUpdates', 'sendMessage'], 'the webhook is left alone');
+
+    telegramReply = (_n, url) => {
+      throw new Error(`connect ECONNREFUSED ${url}`);
+    };
+    const errors = t.mock.method(console, 'error', () => {});
+    const task = (await admin.post<Task>('/tasks', { projectId: snap.projects[0].id, title: 'Still works' })).data;
+    assert.equal((await admin.patch(`/tasks/${task.id}`, { statusId: status('Done') })).status, 200);
+    await ctx.telegram.flush();
+    assert.equal(errors.mock.callCount(), 1);
+    assert.match(String(errors.mock.calls[0].arguments[0]), /^Telegram: couldn’t post about WEB-1: /);
+    assert.ok(!String(errors.mock.calls[0].arguments[0]).includes(TOKEN));
   });
 });
 

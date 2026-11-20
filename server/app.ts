@@ -10,11 +10,13 @@ import type { DB } from './db';
 import { EventHub } from './events';
 import { FileStore } from './files';
 import type { Ctx } from './notify';
+import { Telegram, type TelegramOptions } from './telegram';
 import { HttpError } from './util';
 import { attachmentRoutes } from './api/attachments';
 import { authRoutes } from './api/auth';
 import { taskRoutes } from './api/tasks';
 import { sprintRoutes } from './api/sprints';
+import { telegramRoutes } from './api/telegram';
 import { workspaceRoutes } from './api/workspace';
 
 export interface AppOptions {
@@ -24,6 +26,8 @@ export interface AppOptions {
   attachmentsDir?: string;
   /** Largest accepted upload in bytes (defaults to MAX_UPLOAD_MB). */
   maxUploadBytes?: number;
+  /** Telegram Bot API address, message delay and fetch (tests stand in for Telegram). */
+  telegram?: TelegramOptions;
 }
 
 const CSP = [
@@ -38,10 +42,10 @@ const CSP = [
   "form-action 'self'",
 ].join('; ');
 
-export function createApp({ db, publicDir, attachmentsDir, maxUploadBytes }: AppOptions) {
+export function createApp({ db, publicDir, attachmentsDir, maxUploadBytes, telegram }: AppOptions) {
   const hub = new EventHub((send) => db.afterCommit(send));
   const files = new FileStore(attachmentsDir ?? config.attachmentsDir, maxUploadBytes ?? config.maxUploadMb * 1024 * 1024);
-  const ctx: Ctx = { db, hub, files };
+  const ctx: Ctx = { db, hub, files, telegram: new Telegram(db, telegram) };
   const app = new Hono();
 
   app.onError((err, c) => {
@@ -129,6 +133,7 @@ export function createApp({ db, publicDir, attachmentsDir, maxUploadBytes }: App
   attachmentRoutes(api, ctx);
   sprintRoutes(api, ctx);
   workspaceRoutes(api, ctx);
+  telegramRoutes(api, ctx);
   app.route('/api', api);
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: 'Unknown API endpoint' }, 404));
 

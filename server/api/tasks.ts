@@ -290,6 +290,7 @@ export function updateTask(ctx: Ctx, user: User, taskId: string, p: TaskPatch, o
         kind: 'status',
         statusId: task.statusId,
       });
+      ctx.telegram.statusChanged(task, user.id);
     }
     if (p.description !== undefined && p.description !== before.description) {
       const old = new Set(extractMentions(before.description));

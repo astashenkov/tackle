@@ -28,10 +28,15 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: config.hos
   console.log(`Tackle is running at http://${host}:${info.port}  (database: ${config.databasePath})`);
 });
 
-function shutdown() {
+let stopping = false;
+async function shutdown() {
+  if (stopping) return;
+  stopping = true;
   server.close();
+  // Telegram messages still waiting out their delay go now rather than never (within reason).
+  await Promise.race([ctx.telegram.flush(), new Promise((resolve) => setTimeout(resolve, 5000))]);
   db.close();
   process.exit(0);
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => void shutdown());
+process.on('SIGTERM', () => void shutdown());

@@ -163,6 +163,27 @@ export interface Notification {
   readAt: number | null;
 }
 
+/** Messages to a Telegram chat as Settings shows them. The bot token itself never leaves the server. */
+export interface TelegramSettings {
+  enabled: boolean;
+  /** Last characters of the saved bot token, '' when none is saved. */
+  tokenHint: string;
+  /** A group, channel or user id ("-1001234567890") or a public "@channel". */
+  chatId: string;
+  /** Moving a task into one of these statuses posts a message. */
+  statusIds: ID[];
+  /** Language of the messages. */
+  lang: 'en' | 'ru';
+  /** Address Tackle is opened at, for links to tasks ('' leaves the links out). */
+  appUrl: string;
+}
+
+/** A chat the Telegram bot has been added to or got a message in. */
+export interface TelegramChat {
+  id: string;
+  title: string;
+}
+
 export interface Invite {
   token: string;
   kind: 'invite' | 'reset';

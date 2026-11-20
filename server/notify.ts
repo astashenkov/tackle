@@ -2,12 +2,14 @@ import type { NotificationKind, Task } from '../shared/types';
 import { toNotification, type DB } from './db';
 import type { EventHub } from './events';
 import type { FileStore } from './files';
+import type { Telegram } from './telegram';
 import { now } from './util';
 
 export interface Ctx {
   db: DB;
   hub: EventHub;
   files: FileStore;
+  telegram: Telegram;
 }
 
 export function taskRef(db: DB, task: Task): string {

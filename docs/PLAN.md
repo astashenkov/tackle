@@ -178,6 +178,7 @@ Ordered by value to a small team.
 | 2 | **File attachments** ✅ | Done: attach files to a task (button, drag and drop, paste); screenshots pasted into descriptions and comments show inline. Stored on disk next to the database with a size limit (`MAX_UPLOAD_MB`), served only to signed-in users. |
 | — | **Reviewer** ✅ | Done: a second person on a task who reviews the work. Notified like the assignee, has its own *My tasks → To review* tab, filter and `R` shortcut. |
 | — | **Archive** ✅ | Done: on the 1st of every month done tasks move to a per-project *Archive* grouped by month (`G` `A`), so the Done column only shows this month's work. The Done column can also be archived by hand; reopening a task brings it back. |
+| — | **Telegram** ✅ | Done: a message to a team chat when a task moves to the chosen statuses (In Review, Done, Canceled by default) with its number, assignee and the assignee's latest comment. Set up by admins in *Settings → Integrations*; the bot token never leaves the server. |
 | 3 | **Notifications outside the app** | Browser notifications for new inbox items, and an optional daily email digest via SMTP. |
 | 4 | **Sub-tasks** | A parent link with a progress indicator. Checklists remain the lightweight option. |
 | 5 | **Saved views** | Share a filter set via the URL and pin it to the sidebar. |
