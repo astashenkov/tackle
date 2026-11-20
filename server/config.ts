@@ -27,4 +27,6 @@ export const config = {
    * Enable only when Tackle sits behind a reverse proxy that sets the header.
    */
   trustProxy: env.TRUST_PROXY === 'true' || env.TRUST_PROXY === '1',
+  /** Telegram Bot API address: a local Bot API server or a proxy can stand in for the official one. */
+  telegramApiUrl: (env.TELEGRAM_API_URL ?? 'https://api.telegram.org').replace(/\/+$/, ''),
 };

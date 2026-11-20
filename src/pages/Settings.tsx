@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { ArrowDown, ArrowUp, Copy, Download, KeyRound, Link2, Plus, Trash2, UserX, UserCheck, Archive, ArchiveRestore, Pencil } from 'lucide-preact';
+import { ArrowDown, ArrowUp, Copy, Download, KeyRound, Link2, Plus, Search, Send, Trash2, UserX, UserCheck, Archive, ArchiveRestore, Pencil } from 'lucide-preact';
 import { STATUS_CATEGORIES, PALETTE } from '../../shared/constants';
-import type { Invite, Label, Role, Status, StatusCategory } from '../../shared/types';
+import type { Invite, Label, Role, Status, StatusCategory, TelegramChat, TelegramSettings } from '../../shared/types';
 import { api } from '../lib/api';
 import { relativeTime } from '../lib/date';
 import { lang, setLang, t } from '../lib/i18n';
@@ -30,7 +30,9 @@ import { openPopover } from '../components/Popover';
 import { copyText } from '../components/TaskPanel';
 import { toast } from '../components/Toasts';
 
-const TABS = ['profile', 'preferences', 'workspace', 'members', 'projects', 'labels', 'workflow', 'data'] as const;
+const TABS = ['profile', 'preferences', 'workspace', 'members', 'projects', 'labels', 'workflow', 'integrations', 'data'] as const;
+/** Tabs only admins see. */
+const ADMIN_TABS: readonly Tab[] = ['integrations', 'data'];
 type Tab = (typeof TABS)[number];
 
 function Section({ title, description, children }: { title: string; description?: string; children: ComponentChildren }) {
@@ -549,6 +551,191 @@ function Workflow() {
   );
 }
 
+/* ------------------------------- integrations ------------------------------- */
+
+/** Settings compared regardless of the order statuses were ticked in. */
+const sameTelegram = (a: TelegramSettings, b: TelegramSettings) =>
+  JSON.stringify({ ...a, statusIds: [...a.statusIds].sort() }) === JSON.stringify({ ...b, statusIds: [...b.statusIds].sort() });
+
+function Integrations() {
+  const [saved, setSaved] = useState<TelegramSettings | null>(null);
+  const [form, setForm] = useState<TelegramSettings | null>(null);
+  // A new bot token; the saved one never comes back from the server.
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<TelegramSettings>('/telegram')
+      .then((s) => {
+        setSaved(s);
+        // Not set up yet: suggest this browser's language and address.
+        setForm(s.chatId ? s : { ...s, lang: lang.value, appUrl: s.appUrl || location.origin });
+      })
+      .catch(reportError);
+  }, []);
+  if (!form || !saved) return null;
+
+  const set = (patch: Partial<TelegramSettings>) => setForm((f) => f && { ...f, ...patch });
+  const hasToken = !!token.trim() || !!saved.tokenHint;
+  const complete = hasToken && !!form.chatId.trim();
+  const dirty = !!token.trim() || !sameTelegram(form, saved);
+
+  const save = async () => {
+    try {
+      const next = await api.patch<TelegramSettings>('/telegram', {
+        enabled: form.enabled,
+        chatId: form.chatId.trim(),
+        statusIds: form.statusIds,
+        lang: form.lang,
+        appUrl: form.appUrl.trim(),
+        ...(token.trim() ? { token: token.trim() } : {}),
+      });
+      setSaved(next);
+      setForm(next);
+      setToken('');
+      return true;
+    } catch (err) {
+      reportError(err);
+      return false;
+    }
+  };
+
+  const sendTest = async () => {
+    setBusy(true);
+    try {
+      if (dirty && !(await save())) return;
+      await api.post('/telegram/test');
+      toast(t('settings.telegramTestSent'));
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const findChat = async (anchor: Element) => {
+    setBusy(true);
+    try {
+      const chats = await api.post<TelegramChat[]>('/telegram/chats', token.trim() ? { token: token.trim() } : {});
+      if (!chats.length) return toast(t('settings.telegramNoChats'), { kind: 'error', duration: 6000 });
+      openPopover(
+        anchor,
+        (close) => (
+          <div class="chat-menu">
+            {chats.map((c) => (
+              <button
+                class="menu-item"
+                onClick={() => {
+                  close();
+                  set({ chatId: c.id });
+                }}
+              >
+                <span class="grow ellipsis">{c.title}</span>
+                <span class="muted mono">{c.id}</span>
+              </button>
+            ))}
+          </div>
+        ),
+        { width: 320, align: 'end' },
+      );
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleStatus = (statusId: string, on: boolean) =>
+    set({ statusIds: statusList.value.filter((s) => (s.id === statusId ? on : form.statusIds.includes(s.id))).map((s) => s.id) });
+
+  return (
+    <Section title={t('settings.telegram')} description={t('settings.telegramText')}>
+      <form
+        class="form"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (await save()) toast(t('toast.saved'));
+        }}
+      >
+        <label class="toggle">
+          <input type="checkbox" checked={form.enabled} onChange={(e) => set({ enabled: (e.target as HTMLInputElement).checked })} />
+          <span class="toggle-track" />
+          {t('settings.telegramEnabled')}
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>{t('settings.telegramToken')}</span>
+            <input
+              class="input"
+              type="password"
+              autocomplete="off"
+              spellcheck={false}
+              placeholder={saved.tokenHint ? t('settings.telegramTokenSaved', { hint: saved.tokenHint }) : '123456789:AAH…'}
+              value={token}
+              onInput={(e) => setToken((e.target as HTMLInputElement).value)}
+            />
+            <small class="muted">{t('settings.telegramTokenHelp')}</small>
+          </label>
+          <div class="field">
+            <span>{t('settings.telegramChat')}</span>
+            <div class="input-with-button">
+              <input
+                class="input grow"
+                spellcheck={false}
+                placeholder="-1001234567890"
+                aria-label={t('settings.telegramChat')}
+                value={form.chatId}
+                onInput={(e) => set({ chatId: (e.target as HTMLInputElement).value })}
+              />
+              <button type="button" class="btn" disabled={!hasToken || busy} onClick={(e) => findChat(e.currentTarget)}>
+                <Search size={14} />
+                {t('settings.telegramFind')}
+              </button>
+            </div>
+            <small class="muted">{t('settings.telegramChatHelp')}</small>
+          </div>
+        </div>
+        <div class="field">
+          <span>{t('settings.telegramStatuses')}</span>
+          <div class="check-list">
+            {statusList.value.map((s) => (
+              <label class="check-item" key={s.id}>
+                <input type="checkbox" checked={form.statusIds.includes(s.id)} onChange={(e) => toggleStatus(s.id, (e.target as HTMLInputElement).checked)} />
+                <StatusIcon category={s.category} color={s.color} size={14} />
+                {s.name}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div class="field-row">
+          <label class="field">
+            <span>{t('settings.telegramLang')}</span>
+            <select class="input" value={form.lang} onChange={(e) => set({ lang: (e.target as HTMLSelectElement).value as TelegramSettings['lang'] })}>
+              <option value="en">English</option>
+              <option value="ru">Русский</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>{t('settings.telegramUrl')}</span>
+            <input class="input" type="url" spellcheck={false} placeholder="https://tackle.example.com" value={form.appUrl} onInput={(e) => set({ appUrl: (e.target as HTMLInputElement).value })} />
+            <small class="muted">{t('settings.telegramUrlHelp')}</small>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn" disabled={!complete || busy} onClick={sendTest}>
+            <Send size={14} />
+            {t('settings.telegramTest')}
+          </button>
+          <button class="btn primary" disabled={!dirty || busy || (form.enabled && !complete)}>
+            {t('common.save')}
+          </button>
+        </div>
+      </form>
+    </Section>
+  );
+}
+
 /* ----------------------------------- data ----------------------------------- */
 
 function Data() {
@@ -575,7 +762,7 @@ function Data() {
 export function Settings({ tab }: { tab: string }) {
   const current: Tab = (TABS as readonly string[]).includes(tab) ? (tab as Tab) : 'profile';
   const admin = me.value?.role === 'admin';
-  const visible = TABS.filter((x) => admin || x !== 'data');
+  const visible = TABS.filter((x) => admin || !ADMIN_TABS.includes(x));
   return (
     <div class="page">
       <PageHeader title={t('nav.settings')} />
@@ -595,6 +782,7 @@ export function Settings({ tab }: { tab: string }) {
           {current === 'projects' && <Projects />}
           {current === 'labels' && <Labels />}
           {current === 'workflow' && <Workflow />}
+          {current === 'integrations' && <Integrations />}
           {current === 'data' && <Data />}
         </div>
       </div>

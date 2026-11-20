@@ -497,6 +497,7 @@ select.input {
 }
 .form-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -3214,6 +3215,31 @@ a.attachment-name:hover {
 .invite-row {
   display: flex;
   gap: 8px;
+}
+.input-with-button {
+  display: flex;
+  gap: 8px;
+}
+.check-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.check-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.check-item input {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+.chat-menu {
+  padding: 4px;
 }
 .invite-row .input {
   width: 140px;

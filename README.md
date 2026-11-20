@@ -30,6 +30,8 @@ Tackle is a lightweight issue tracker built for small teams and early-stage star
 
 **Team** — invite links (no email server needed), admin/member roles, password reset links, deactivating members. Inbox with notifications when you are assigned, asked to review, mentioned, or when someone comments on or moves your tasks.
 
+**Telegram** — post to a team chat when a task moves to *In Review*, *Done* or *Canceled* (or any statuses you pick): the task number and title, its assignee and the assignee's latest comment, with "none" where something is missing. Set it up in *Settings → Integrations*: paste a token from [@BotFather](https://t.me/BotFather), add the bot to the group and press *Find* to pick it. A message goes out once a task has stayed in its new status for 10 seconds, so dragging a card back and forth posts nothing extra.
+
 **Polish** — light and dark themes, English and Russian UI, bulk edit for multi-selected tasks, undo for deletions, copy task link / git branch name (`web-42-fix-login`), works on phones and can be added to the home screen.
 
 ## Quick start
@@ -74,6 +76,7 @@ The database and attached files live in the `tackle-data` volume (`/data/tackle.
 | `SESSION_DAYS` | `30` | Session lifetime |
 | `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for the client IP (sign-in rate limiting). Enable only behind a reverse proxy |
 | `TZ` | system | Time zone whose midnight on the 1st starts a new month for the archive, e.g. `Europe/Moscow` |
+| `TELEGRAM_API_URL` | `https://api.telegram.org` | Telegram Bot API address, for a [local Bot API server](https://github.com/tdlib/telegram-bot-api) or a proxy |
 
 Put Tackle behind any reverse proxy (Caddy, nginx, Traefik) for HTTPS. Server-Sent Events need response buffering disabled for `/api/events` — Tackle sends `X-Accel-Buffering: no`, which nginx honours. nginx also limits request bodies to 1 MB by default: raise `client_max_body_size` to `MAX_UPLOAD_MB` so attachments get through.
 
