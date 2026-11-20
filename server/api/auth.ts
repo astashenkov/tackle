@@ -9,8 +9,6 @@ import { handleBase, nextUserColor, uniqueHandle } from '../users';
 import { asBody, badRequest, email, HttpError, newId, now, password, str } from '../util';
 import { workspaceInfo } from './workspace';
 
-const loginLimiter = new RateLimiter(10, 15 * 60_000);
-
 /** The caller's IP. Forwarded headers are only trusted behind a proxy, otherwise anyone could spoof them. */
 function clientIp(c: Context): string {
   if (config.trustProxy) {
@@ -60,6 +58,8 @@ function validInvite(ctx: Ctx, token: string, kind: 'invite' | 'reset') {
 
 export function authRoutes(app: Hono, ctx: Ctx) {
   const { db, hub } = ctx;
+  // One per app rather than per process, so separate app instances (tests) don't share attempts.
+  const loginLimiter = new RateLimiter(10, 15 * 60_000);
 
   /** Tells the client whether the workspace still needs its first-run setup and who is signed in. */
   app.get('/api/state', (c) => {
