@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Activity, Attachment, Notification, Snapshot, Sprint, Task, TelegramSettings } from '../../shared/types';
+import type { Activity, Attachment, Comment, Notification, Snapshot, Sprint, Task, TelegramSettings } from '../../shared/types';
 import { createApp } from '../../server/app';
 import { archiveDoneTasks, nextMonthStart, scheduleArchive } from '../../server/archive';
 import fs from 'node:fs';
@@ -235,6 +235,24 @@ describe('tasks', () => {
     const kinds = activity.map((a) => a.kind);
     assert.deepEqual(kinds, ['created', 'status']);
     assert.deepEqual(activity[1].data, { from: status('Todo'), to: status('In Progress') });
+  });
+
+  test('the history of every task comes in one request, without deleted tasks', async () => {
+    const p = snap.projects[0].id;
+    const a = (await admin.post<Task>('/tasks', { projectId: p, title: 'A' })).data;
+    const b = (await admin.post<Task>('/tasks', { projectId: p, title: 'B' })).data;
+    const gone = (await admin.post<Task>('/tasks', { projectId: p, title: 'Gone' })).data;
+    await admin.post(`/tasks/${a.id}/comments`, { body: 'first' });
+    await admin.patch(`/tasks/${b.id}`, { statusId: status('In Progress') });
+    await admin.post(`/tasks/${b.id}/comments`, { body: 'second' });
+    await admin.post(`/tasks/${gone.id}/comments`, { body: 'hidden' });
+    await admin.post('/tasks/delete', { ids: [gone.id] });
+
+    const { comments, activity } = (await admin.get<{ comments: Comment[]; activity: Activity[] }>('/history')).data;
+    assert.deepEqual(comments.map((c) => [c.taskId, c.body]), [[a.id, 'first'], [b.id, 'second']]);
+    assert.deepEqual(activity.map((x) => [x.taskId, x.kind]), [[a.id, 'created'], [b.id, 'created'], [b.id, 'status']]);
+    assert.deepEqual(activity[2].data, { from: status('Todo'), to: status('In Progress') });
+    assert.equal((await new Client(app).get('/history')).status, 401);
   });
 
   test('adds and removes labels incrementally and in bulk', async () => {
