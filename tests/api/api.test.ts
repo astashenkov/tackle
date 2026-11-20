@@ -605,6 +605,18 @@ describe('telegram', () => {
     assert.equal(telegramCalls[1].url, `https://telegram.test/bot${TOKEN}/getUpdates`);
     assert.equal((await admin.post('/telegram/chats', { token: 'nope' })).status, 400);
 
+    // A bot that already serves another program: its chats can't be read, but it can still send.
+    telegramCalls = [];
+    telegramReply = (_n, url) =>
+      url.endsWith('/getUpdates')
+        ? { status: 409, body: { ok: false, error_code: 409, description: 'Conflict: can\'t use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first' } }
+        : { status: 200, body: { ok: true } };
+    const busy = await admin.post('/telegram/chats', {});
+    assert.equal(busy.status, 400);
+    assert.equal(busy.data.error, 'telegram_busy');
+    assert.equal((await admin.post('/telegram/test')).status, 200);
+    assert.deepEqual(telegramCalls.map((c) => c.url.split('/').pop()), ['getUpdates', 'sendMessage'], 'the webhook is left alone');
+
     telegramReply = (_n, url) => {
       throw new Error(`connect ECONNREFUSED ${url}`);
     };

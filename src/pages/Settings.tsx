@@ -3,7 +3,7 @@ import type { ComponentChildren } from 'preact';
 import { ArrowDown, ArrowUp, Copy, Download, KeyRound, Link2, Plus, Search, Send, Trash2, UserX, UserCheck, Archive, ArchiveRestore, Pencil } from 'lucide-preact';
 import { STATUS_CATEGORIES, PALETTE } from '../../shared/constants';
 import type { Invite, Label, Role, Status, StatusCategory, TelegramChat, TelegramSettings } from '../../shared/types';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { relativeTime } from '../lib/date';
 import { lang, setLang, t } from '../lib/i18n';
 import { navigate } from '../lib/router';
@@ -640,7 +640,8 @@ function Integrations() {
         { width: 320, align: 'end' },
       );
     } catch (err) {
-      reportError(err);
+      if (err instanceof ApiError && err.code === 'telegram_busy') toast(t('settings.telegramBusy'), { kind: 'error', duration: 8000 });
+      else reportError(err);
     } finally {
       setBusy(false);
     }

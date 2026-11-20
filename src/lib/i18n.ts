@@ -415,6 +415,7 @@ const en = {
   'settings.telegramChat': 'Chat',
   'settings.telegramChatHelp': 'Add the bot to the group and press Find, or enter the chat id.',
   'settings.telegramFind': 'Find',
+  'settings.telegramBusy': 'This bot already works for another program, so Tackle can’t look up its chats. Enter the chat ID by hand: messages will still be sent.',
   'settings.telegramNoChats': 'The bot hasn’t seen any chats yet. Add it to the group (or remove it and add it again) and try once more.',
   'settings.telegramStatuses': 'Post when a task moves to',
   'settings.telegramLang': 'Message language',

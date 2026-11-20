@@ -111,7 +111,15 @@ function parseAppUrl(value: unknown): string {
   return v;
 }
 
-class TelegramError extends Error {}
+class TelegramError extends Error {
+  constructor(
+    message: string,
+    /** Telegram's HTTP status, 0 when it couldn't be reached. */
+    readonly status = 0,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Posts to a Telegram chat when a task moves to one of the chosen statuses (In Review, Done,
@@ -191,7 +199,16 @@ export class Telegram {
     const token = b.token ? str(b.token, 'Bot token', { max: 200 }) : this.stored().token;
     if (!token) throw badRequest('Enter the bot token first');
     if (!TOKEN_RE.test(token)) throw badRequest('That doesn’t look like a bot token. @BotFather gives one like 123456789:AAH…');
-    const updates = await this.ask(() => this.call<Record<string, unknown>[]>(token, 'getUpdates', {}));
+    const updates = await this.ask(() =>
+      this.call<Record<string, unknown>[]>(token, 'getUpdates', {}).catch((err) => {
+        // A bot that already works for another program (a webhook or another getUpdates loop) can
+        // still send messages, but its updates aren't ours to read. Its webhook is left alone.
+        if (err instanceof TelegramError && err.status === 409) {
+          throw badRequest('This bot already works for another program, so Tackle can’t look up its chats. Enter the chat id by hand.', 'telegram_busy');
+        }
+        throw err;
+      }),
+    );
     const found = new Map<string, TelegramChat>();
     for (const update of [...updates].reverse()) {
       for (const part of Object.values(update)) {
@@ -307,7 +324,7 @@ export class Telegram {
         await sleep(Math.min(wait, 60) * 1000);
         continue;
       }
-      throw new TelegramError(hide(data?.description ?? `HTTP ${res.status}`));
+      throw new TelegramError(hide(data?.description ?? `HTTP ${res.status}`), res.status);
     }
   }
 }

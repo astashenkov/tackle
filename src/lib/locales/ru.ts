@@ -431,6 +431,7 @@ const ru: Record<Key, Entry> = {
   'settings.telegramChat': 'Чат',
   'settings.telegramChatHelp': 'Добавьте бота в группу и нажмите «Найти» или введите ID чата.',
   'settings.telegramFind': 'Найти',
+  'settings.telegramBusy': 'Этот бот уже работает в другой программе, поэтому Tackle не может найти его чаты. Введите ID чата вручную — сообщения при этом отправляться будут.',
   'settings.telegramNoChats': 'Бот пока не видел ни одного чата. Добавьте его в группу (или удалите и добавьте снова) и попробуйте ещё раз.',
   'settings.telegramStatuses': 'Писать, когда задача переходит в',
   'settings.telegramLang': 'Язык сообщений',
