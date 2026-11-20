@@ -12,7 +12,11 @@ const META_KEY = 'telegram';
  * moment to leave a comment right after moving the task.
  */
 const DELAY_MS = 10_000;
-const COMMENT_MAX = 1000;
+/** Longer comments are cut: a Telegram message holds 4096 characters, the title takes up to 500. */
+const COMMENT_MAX = 2500;
+/** A comment longer than this (characters or lines) folds into an expandable quote. */
+const FOLD_CHARS = 400;
+const FOLD_LINES = 8;
 const TOKEN_RE = /^\d+:[A-Za-z0-9_-]{20,}$/;
 const CHAT_RE = /^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{3,31})$/;
 
@@ -64,7 +68,7 @@ export interface Message {
   assignee: string | null;
   /** Who moved the task, when that wasn't the assignee. */
   movedBy: string | null;
-  /** The assignee's latest comment on the task. */
+  /** The assignee's latest comment on the task, already Telegram HTML (see commentHtml). */
   comment: string | null;
   url: string | null;
 }
@@ -79,15 +83,140 @@ export function composeMessage(m: Message): string {
     `${s.assignee}: ${m.assignee ? `<b>${escape(m.assignee)}</b>` : `<i>${s.noAssignee}</i>`}`,
   ];
   if (m.movedBy) lines.push(`${s.movedBy}: ${escape(m.movedBy)}`);
-  lines.push(m.comment ? `${s.comment}:\n<blockquote>${escape(m.comment)}</blockquote>` : `${s.comment}: <i>${s.noComment}</i>`);
+  if (m.comment) {
+    // A long comment folds so it doesn't take over the chat; Telegram shows its first lines.
+    const visible = plainText(m.comment);
+    const fold = visible.length > FOLD_CHARS || visible.split('\n').length > FOLD_LINES;
+    lines.push(`${s.comment}:\n<blockquote${fold ? ' expandable' : ''}>${m.comment}</blockquote>`);
+  } else {
+    lines.push(`${s.comment}: <i>${s.noComment}</i>`);
+  }
   if (m.url) lines.push('', escape(m.url));
   return lines.join('\n');
 }
 
-/** A comment as plain text: attached files become their names, long text is cut short. */
-export function commentText(body: string): string {
-  const text = body.replace(/!?\[([^\]]*)\]\(\/api\/attachments\/[^)\s]+\)/g, '📎 $1').trim();
-  return text.length > COMMENT_MAX ? `${text.slice(0, COMMENT_MAX).trimEnd()}…` : text;
+/** Telegram HTML as plain text: what a reader sees, for a message sent without formatting. */
+export function plainText(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
+}
+
+export interface CommentLinks {
+  /** Tackle's address, for links inside Tackle ("/t/WEB-1"); without it they stay plain text. */
+  appUrl?: string;
+  /** Whether "WEB-12" is a task, so it can become a link. */
+  isTask?: (ref: string) => boolean;
+}
+
+/**
+ * A Markdown comment as Telegram HTML, which goes inside the message's quote. Telegram knows only
+ * a few tags (no lists, headings or line-break tags) and allows no code or nested quote inside a
+ * quote, so: emphasis and links stay, headings turn bold, list items get "•" / "1." / "☐", quoted
+ * lines get "»", and code shows as plain text. Attached files become their names.
+ */
+export function commentHtml(body: string, links: CommentLinks = {}): string {
+  let src = body.replace(/\r\n?/g, '\n').trim();
+  if (src.length > COMMENT_MAX) {
+    const cut = src.slice(0, COMMENT_MAX);
+    const at = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf(' '));
+    src = `${(at > COMMENT_MAX * 0.8 ? cut.slice(0, at) : cut).trimEnd()}…`;
+  }
+  const out: string[] = [];
+  let fence = false;
+  let blank = false;
+  for (const line of src.split('\n')) {
+    if (/^\s*```/.test(line)) {
+      fence = !fence;
+      continue;
+    }
+    if (fence) {
+      out.push(escape(line));
+      continue;
+    }
+    if (!line.trim()) {
+      // Runs of empty lines (around a skipped code fence too) collapse into one.
+      if (out.length && !blank) out.push('');
+      blank = true;
+      continue;
+    }
+    blank = false;
+    const heading = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+    const item = /^(\s*)([-*+]|\d+[.)])\s+(?:\[([ xX])\]\s+)?(.*)$/.exec(line);
+    const quote = /^>\s?(.*)$/.exec(line);
+    if (heading) out.push(`<b>${inlineHtml(heading[1], links)}</b>`);
+    else if (/^(\*\s*){3,}$|^(-\s*){3,}$|^(_\s*){3,}$/.test(line.trim())) out.push('———');
+    else if (quote) out.push(`» <i>${inlineHtml(quote[1], links)}</i>`);
+    else if (item) {
+      const [, indent, marker, box, text] = item;
+      const depth = Math.min(Math.floor(indent.replace(/\t/g, '    ').length / 2), 4);
+      const bullet = box !== undefined ? (box === ' ' ? '☐' : '☑') : /\d/.test(marker) ? marker.replace(')', '.') : '•';
+      out.push(`${'    '.repeat(depth)}${bullet} ${inlineHtml(text, links)}`);
+    } else out.push(inlineHtml(line.trim(), links));
+  }
+  while (out.length && out[out.length - 1] === '') out.pop();
+  return out.join('\n');
+}
+
+/** One line of Markdown as Telegram HTML; the result is always properly nested. */
+function inlineHtml(src: string, links: CommentLinks): string {
+  // Code spans, files and links are set aside first, so nothing inside them is formatted and
+  // emphasis can only wrap them whole.
+  const held: string[] = [];
+  const hold = (html: string) => `\u0000${held.push(html) - 1}\u0000`;
+  const target = (url: string): string | null => {
+    if (/^https?:\/\//i.test(url)) return url;
+    if (url.startsWith('/') && links.appUrl) return links.appUrl + url;
+    return null;
+  };
+  let s = src
+    .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, _t, code: string) => hold(escape(code.trim())))
+    .replace(/!?\[([^\]]*)\]\(\/api\/attachments\/[^)\s]+\)/g, (_, name: string) => hold(`📎 ${escape(name)}`))
+    .replace(/!?\[([^\]]*)\]\(([^)\s]+)\)/g, (_, text: string, url: string) => {
+      const href = target(url);
+      const label = emphasis(escape(text || url));
+      return hold(href ? `<a href="${escape(href).replace(/"/g, '&quot;')}">${label}</a>` : label);
+    });
+  s = emphasis(escape(s));
+  if (links.appUrl && links.isTask) {
+    s = s.replace(/(^|[^\w/-])([A-Z][A-Z0-9]{1,5}-\d+)\b/g, (m, pre: string, ref: string) =>
+      links.isTask!(ref) ? pre + hold(`<a href="${escape(`${links.appUrl}/t/${ref}`)}">${ref}</a>`) : m,
+    );
+  }
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => held[Number(i)]);
+}
+
+/**
+ * Bold, italic and strikethrough, the way Tackle shows them. Delimiters that would cross another
+ * pair's ("**a *b** c*") stay as typed, so the tags always nest and Telegram accepts the message.
+ */
+function emphasis(s: string): string {
+  // Every rule captures (text before, inner text). The inner text may hold no delimiter of its
+  // own kind, and a finished tag is set aside, so a later match can only wrap it whole.
+  const rules: [RegExp, string][] = [
+    [/()\*\*(?=\S)([^*]*?\S)\*\*/g, 'b'],
+    [/()__(?=\S)([^_]*?\S)__/g, 'b'],
+    [/(^|[^*\w])\*(?=\S)([^*]*?\S)\*(?!\w)/g, 'i'],
+    [/(^|[^_\w])_(?=\S)([^_]*?\S)_(?!\w)/g, 'i'],
+    [/()~~(?=\S)([^~]*?\S)~~/g, 's'],
+  ];
+  const held: string[] = [];
+  const hold = (html: string) => `\u0001${held.push(html) - 1}\u0001`;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [re, tag] of rules) {
+      s = s.replace(re, (_, pre: string, inner: string) => {
+        changed = true;
+        return pre + hold(`<${tag}>${inner}</${tag}>`);
+      });
+    }
+  }
+  // A tag only holds tags set aside before it, so restoring from the last one leaves none behind.
+  for (let i = held.length; i-- > 0; ) s = s.split(`\u0001${i}\u0001`).join(held[i]);
+  return s;
 }
 
 /** Out of the box: review statuses and the closed ones (Done, Canceled). */
@@ -275,6 +404,10 @@ export class Telegram {
         )?.body
       : undefined;
     const ref = taskRef(db, task);
+    const isTask = (r: string) => {
+      const [key, number] = r.split('-');
+      return !!db.get('SELECT 1 FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.key = ? AND t.number = ? AND t.deleted_at IS NULL', key, Number(number));
+    };
     return {
       lang: s.lang,
       ref,
@@ -282,13 +415,21 @@ export class Telegram {
       status,
       assignee: name(task.assigneeId),
       movedBy: actorId === task.assigneeId ? null : name(actorId),
-      comment: comment ? commentText(comment) || null : null,
+      comment: comment ? commentHtml(comment, { appUrl: s.appUrl, isTask }) || null : null,
       url: s.appUrl ? `${s.appUrl}/t/${ref}` : null,
     };
   }
 
   private async send(s: Pick<Stored, 'token' | 'chatId'>, text: string): Promise<void> {
-    await this.call(s.token, 'sendMessage', { chat_id: s.chatId, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    const message = { chat_id: s.chatId, link_preview_options: { is_disabled: true } };
+    try {
+      await this.call(s.token, 'sendMessage', { ...message, text, parse_mode: 'HTML' });
+    } catch (err) {
+      // Should Telegram reject the formatting after all, the message still goes out, as plain text.
+      if (!(err instanceof TelegramError && err.status === 400 && /parse entities/i.test(err.message))) throw err;
+      console.error(`Telegram: sending without formatting: ${err.message}`);
+      await this.call(s.token, 'sendMessage', { ...message, text: plainText(text) });
+    }
   }
 
   /** Runs a Bot API call for an admin, turning Telegram's complaint into a readable error. */

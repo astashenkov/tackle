@@ -522,6 +522,33 @@ describe('telegram', () => {
     assert.match(ru, /\nИсполнитель: <b>Maria Petrova<\/b>\nКомментарий исполнителя: <i>нет<\/i>$/, 'no link without an address');
   });
 
+  test('the assignee’s Markdown arrives formatted, and as plain text if Telegram rejects it', async () => {
+    const maria = await invite('Maria Petrova', 'maria@example.com');
+    const ids = Object.fromEntries((await admin.get<Snapshot>('/sync')).data.users.map((u) => [u.handle, u.id]));
+    const p = snap.projects[0].id;
+    await connect();
+    await admin.post<Task>('/tasks', { projectId: p, title: 'First' }); // WEB-1
+    const t = (await admin.post<Task>('/tasks', { projectId: p, title: 'Second', assigneeId: ids.maria })).data;
+    await maria.post(`/tasks/${t.id}/comments`, { body: '**Done.** Follows WEB-1, not WEB-99:\n- one\n- two' });
+
+    await maria.patch(`/tasks/${t.id}`, { statusId: status('In Review') });
+    const [text] = await sent();
+    assert.ok(
+      text.includes(
+        '<blockquote><b>Done.</b> Follows <a href="https://tackle.example.com/t/WEB-1">WEB-1</a>, not WEB-99:\n• one\n• two</blockquote>',
+      ),
+      text,
+    );
+
+    telegramReply = (n) =>
+      n === 1 ? { status: 400, body: { ok: false, description: 'Bad Request: can\'t parse entities: unexpected end tag' } } : { status: 200, body: { ok: true } };
+    await maria.patch(`/tasks/${t.id}`, { statusId: status('Done') });
+    await ctx.telegram.flush();
+    assert.equal(telegramCalls.length, 2);
+    assert.equal(telegramCalls[1].body.parse_mode, undefined);
+    assert.match(telegramCalls[1].body.text, /^✅ WEB-2 → Done\nSecond\n[\s\S]*\nDone\. Follows WEB-1, not WEB-99:\n• one\n• two\n/);
+  });
+
   test('only a task’s latest move counts, and only the chosen statuses post', async () => {
     const p = snap.projects[0].id;
     await connect();
